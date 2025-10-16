@@ -416,3 +416,45 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# --- Project specific additions (Deep Denoise Client) ---
+
+# Environment & secrets
+*.secret.json
+*.secrets.json
+*.key
+*.pem
+*.cer
+
+# App settings - keep only example files in repo
+appsettings.Development.json
+appsettings.Local.json
+appsettings.*.local.json
+appsettings.private.json
+
+# Large sample data / medical imaging
+samples/
+sample_data/
+data/
+datasets/
+
+# gRPC generated (in case it’s emitted outside obj/)
+**/*.g.cs
+
+# Logs & diagnostics
+logs/
+*.etl
+*.dmp
+
+# OS noise
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# JetBrains / VS Code (keep shared workspace files if you need them)
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
