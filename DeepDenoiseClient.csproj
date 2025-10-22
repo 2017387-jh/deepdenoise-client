@@ -22,11 +22,22 @@
 
   <ItemGroup>
     <Folder Include="Assets\" />
-    <Folder Include="Models\" />
     <Folder Include="Protos\" />
-    <Folder Include="ViewModels\" />
-    <Folder Include="Services\" />
-    <Folder Include="Views\Tabs\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="Protos\deepdenoise.proto" GrpcServices="Client" ProtoRoot="Protos" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
+    <None Update="appsettings.*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

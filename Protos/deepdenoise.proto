@@ -1,0 +1,22 @@
+syntax = "proto3";
+package ddn;
+
+// 입력/출력 키로 비동기 파이프라인 트리거
+service DeepDenoise {
+  rpc Process (ProcessRequest) returns (ProcessReply);
+}
+
+message ProcessRequest {
+  string input_key   = 1;   // s3 입력 키
+  string output_key  = 2;   // s3 출력 키(선택, 없으면 서버 생성)
+  string model       = 3;   // ex) "efficient"
+  int32  width       = 4;
+  int32  height      = 5;
+  int32  using_bits  = 6;
+}
+
+message ProcessReply {
+  string output_key  = 1;   // 서버가 결정했다면 반환
+  string output_url  = 2;   // presign url 포함 시
+  string status      = 3;   // ex) "OK"
+}
