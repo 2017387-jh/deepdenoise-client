@@ -8,111 +8,153 @@
         </Grid.ColumnDefinitions>
 
         <!-- Left column: flow -->
-        <StackPanel Margin="0,0,14,0">
-            <TextBlock Text="API Base" Style="{StaticResource LabelText}"/>
-            <TextBox Text="{Binding HttpVM.ApiBase, RelativeSource={RelativeSource AncestorType=Window}}"/>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Grid.Column="0">
+            <StackPanel Margin="0,0,14,0">
 
-            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                <Button Content="Select Image" Command="{Binding HttpVM.PickFileCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
-                <TextBlock Text="{Binding HttpVM.FilePath, RelativeSource={RelativeSource AncestorType=Window}}"
-                   VerticalAlignment="Center" Foreground="{StaticResource BrushSubText}"/>
+                <!-- API Base -->
+                <TextBlock Text="API Base" Style="{StaticResource LabelText}"/>
+                <TextBox Text="{Binding HttpVM.ApiBase}" />
+
+                <!-- File select -->
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0" VerticalAlignment="Center">
+                    <Button Content="Select Image" Command="{Binding HttpVM.PickFileCommand}" />
+                    <TextBlock Text="{Binding HttpVM.FilePath}"
+                               Margin="8,0,0,0"
+                               VerticalAlignment="Center"
+                               Foreground="{StaticResource BrushSubText}" />
+                </StackPanel>
+
+                <!-- S3 Object Key -->
+                <TextBlock Text="S3 Object Key" Style="{StaticResource LabelText}" Margin="0,6,0,0"/>
+                <TextBox Text="{Binding HttpVM.FileName}" />
+
+                <!-- Upload Presign -->
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button Content="Get Upload URL" Command="{Binding HttpVM.GetUploadUrlCommand}"/>
+                    <Button Content="Cancel" Margin="6,0,0,0" Command="{Binding HttpVM.GetUploadUrlCancelCommand}"/>
+                </StackPanel>
+                <TextBox Height="44" TextWrapping="Wrap" Text="{Binding HttpVM.PresignedPutUrl}"/>
+
+                <!-- Upload -->
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <Button Content="Upload" Command="{Binding HttpVM.UploadCommand}"/>
+                    <Button Content="Cancel" Margin="6,0,0,0" Command="{Binding HttpVM.UploadCancelCommand}"/>
+                </StackPanel>
+                <ProgressBar Margin="0,6,0,0"
+                             Minimum="0" Maximum="100"
+                             Value="{Binding HttpVM.ProgressPercent}"/>
+
+                <Separator Margin="0,12,0,12"/>
+
+                <!-- Output options -->
+                <TextBlock Text="Output Key (Option)" Style="{StaticResource LabelText}"/>
+                <TextBox Text="{Binding HttpVM.OutputKey}" />
+
+                <TextBlock Text="Correlation Id" Style="{StaticResource LabelText}" Margin="0,6,0,0"/>
+                <TextBox Text="{Binding HttpVM.CorrelationId}" />
+
+                <!-- Download Presign -->
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button Content="Output URL" Command="{Binding HttpVM.GetDownloadUrlCommand}"/>
+                    <Button Content="Cancel" Margin="6,0,0,0" Command="{Binding HttpVM.GetDownloadUrlCancelCommand}"/>
+                </StackPanel>
+                <TextBox Height="44" TextWrapping="Wrap" Text="{Binding HttpVM.PresignedGetUrl}"/>
+
+                <!-- Run All -->
+                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                    <Button Padding="10"
+                            Command="{Binding HttpVM.RunAllCommand}"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center">
+                        <TextBlock Text="Run all&#10;(Upload → Invoke → Download)" TextAlignment="Center" />
+                    </Button>
+
+                    <Button Padding="10"
+                            Margin="6,0,0,0"
+                            Command="{Binding HttpVM.RunAllCancelCommand}"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center"
+                            Content="Cancel" />
+                </StackPanel>
+
             </StackPanel>
-
-            <TextBlock Text="S3 Object Key" Style="{StaticResource LabelText}"/>
-            <TextBox Text="{Binding HttpVM.ObjectKey, RelativeSource={RelativeSource AncestorType=Window}}"/>
-
-            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                <Button Content="Get Upload URL" Command="{Binding HttpVM.GetUploadUrlCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
-                <Button Content="Cancel" Command="{Binding HttpVM.GetUploadUrlCancelCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
-            </StackPanel>
-            <TextBox Height="44" TextWrapping="Wrap"
-               Text="{Binding HttpVM.PresignedPutUrl, RelativeSource={RelativeSource AncestorType=Window}}"/>
-
-            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                <Button Content="Upload" Command="{Binding HttpVM.UploadCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
-                <Button Content="Cancel" Command="{Binding HttpVM.UploadCancelCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
-            </StackPanel>
-            <ProgressBar Margin="0,6,0,0"
-                   Minimum="0" Maximum="100"
-                   Value="{Binding HttpVM.ProgressPercent, RelativeSource={RelativeSource AncestorType=Window}}"/>
-
-            <Separator Margin="0,12,0,12"/>
-
-            <TextBlock Text="Output Key (Option)" Style="{StaticResource LabelText}"/>
-            <TextBox Text="{Binding HttpVM.OutputKey, RelativeSource={RelativeSource AncestorType=Window}}"/>
-
-            <TextBlock Text="Correlation Id" Style="{StaticResource LabelText}"/>
-            <TextBox Text="{Binding HttpVM.CorrelationId, RelativeSource={RelativeSource AncestorType=Window}}"/>
-
-            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                <Button Content="Output URL" Command="{Binding HttpVM.GetDownloadUrlCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
-                <Button Content="Cancel" Command="{Binding HttpVM.GetDownloadUrlCancelCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
-            </StackPanel>
-            <TextBox Height="44" TextWrapping="Wrap"
-               Text="{Binding HttpVM.PresignedGetUrl, RelativeSource={RelativeSource AncestorType=Window}}"/>
-
-            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                <Button Padding="10" 
-                    HorizontalContentAlignment="Center"
-                    VerticalContentAlignment="Center">
-                    <TextBlock Text="Run all&#10;(Upload → Invoke → Download)" TextAlignment="Center" />
-                </Button>
-
-                <Button Padding="10"
-                    HorizontalContentAlignment="Center"
-                    VerticalContentAlignment="Center"
-                    Content="Cancel" />
-            </StackPanel>
-        </StackPanel>
+        </ScrollViewer>
 
         <!-- Right column: request/response -->
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
+                <!-- Request 제목 -->
+                <RowDefinition Height="Auto"/> 
+                <!-- Request JSON 에디터(가변) -->
+                <RowDefinition Height="*"/> 
+                <!-- 버튼들 -->
+                <RowDefinition Height="Auto"/> 
+                <!-- Response 제목 -->
                 <RowDefinition Height="Auto"/>
-                <!-- Request title -->
-                <RowDefinition Height="Auto"/>
-                <!-- Request card -->
-                <RowDefinition Height="Auto"/>
-                <!-- Invoke buttons -->
-                <RowDefinition Height="Auto"/>
-                <!-- Response title -->
+                <!-- Response JSON 박스(가변) -->
                 <RowDefinition Height="*"/>
-                <!-- Response card (fills remaining space) -->
             </Grid.RowDefinitions>
 
             <!-- Request -->
-            <TextBlock Grid.Row="0" Text="Request Body(JSON)" Style="{StaticResource SectionTitle}"/>
+            <TextBlock Grid.Row="0"
+               Text="Request Body (JSON, editable)"
+               Style="{StaticResource SectionTitle}"/>
 
-            <Border Grid.Row="1" Style="{StaticResource Card}">
-                <TextBox AcceptsReturn="True" Height="200" VerticalScrollBarVisibility="Auto"
-                    Text="{Binding HttpVM.RequestJson, RelativeSource={RelativeSource AncestorType=Window}}"/>
+            <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,4,0,0">
+                <!-- 안쪽은 DockPanel로 에러 라벨만 아래쪽 도킹 -->
+                <DockPanel LastChildFill="True">
+                    <!-- 에러 메시지 -->
+                    <TextBlock DockPanel.Dock="Bottom"
+                       Margin="8,6,8,8"
+                       Foreground="Tomato"
+                       FontSize="12"
+                       Text="{Binding HttpVM.RequestJsonError}"
+                       Visibility="{Binding HttpVM.RequestJsonError, Converter={StaticResource NullToVisibility}}"/>
+
+                    <!-- TextBox 자체 스크롤 사용 -->
+                    <TextBox AcceptsReturn="True"
+                             TextWrapping="NoWrap"
+                             FontFamily="Consolas"
+                             Padding="8"
+                             VerticalAlignment="Stretch"
+                             HorizontalAlignment="Stretch"
+                             MinHeight="180"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                             Text="{Binding HttpVM.RequestJsonEditable, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                </DockPanel>
             </Border>
 
+            <!-- Invoke / Actions -->
             <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,12">
-                <Button Padding="10" 
-                    Command="{Binding HttpVM.InvokeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                    HorizontalContentAlignment="Center"
-                    VerticalContentAlignment="Center">
-                    <TextBlock Text="Send&#10;(/Invocations)" TextAlignment="Center" />
+                <Button Margin="0,0,0,0"
+                Command="{Binding HttpVM.InvokeCommand}">
+                    <TextBlock Text="Send&#10;(/invocations)" TextAlignment="Center"/>
                 </Button>
-                <Button Content="Cancel" 
-            Command="{Binding HttpVM.InvokeCancelCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                <Button Content="Cancel" Margin="12,0,0,0"
+                Command="{Binding HttpVM.InvokeCancelCommand}"/>
+                <Button Content="Reset to Defaults" Margin="12,0,0,0"
+                Command="{Binding HttpVM.ResetRequestToDefaultsCommand}"/>
             </StackPanel>
 
             <!-- Response -->
-            <TextBlock Grid.Row="3" Text="Response JSON" Style="{StaticResource SectionTitle}"/>
+            <TextBlock Grid.Row="3"
+               Text="Response JSON"
+               Style="{StaticResource SectionTitle}"/>
 
-            <Border Grid.Row="4" Style="{StaticResource Card}">
+            <Border Grid.Row="4" Style="{StaticResource Card}" Margin="0,4,0,0">
                 <TextBox AcceptsReturn="True"
-                TextWrapping="NoWrap"
-                VerticalAlignment="Stretch"
-                VerticalScrollBarVisibility="Auto"
-                HorizontalScrollBarVisibility="Auto"
-                IsReadOnly="True"
-                IsReadOnlyCaretVisible="False" 
-                FontFamily="Consolas"
-                BorderThickness="1"
-                Text="{Binding HttpVM.ResponseJson, RelativeSource={RelativeSource AncestorType=Window}, Mode=OneWay}"/>
+                         TextWrapping="NoWrap"
+                         IsReadOnly="True"
+                         IsReadOnlyCaretVisible="False"
+                         FontFamily="Consolas"
+                         Padding="8"
+                         VerticalAlignment="Stretch"
+                         HorizontalAlignment="Stretch"
+                         MinHeight="200"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                         Text="{Binding HttpVM.ResponseJson, Mode=OneWay}"/>
             </Border>
         </Grid>
     </Grid>

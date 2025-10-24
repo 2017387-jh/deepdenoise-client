@@ -21,7 +21,7 @@ public sealed class PresignService
 
     private async Task<PresignResult> GetAsync(string mode, string objectKey, CancellationToken ct)
     {
-        var ub = new UriBuilder(_settings.Active.PresignUri)
+        var ub = new UriBuilder(_settings.ActiveProfile.PresignUri)
         {
             Query = $"mode={Uri.EscapeDataString(mode)}&file={Uri.EscapeDataString(objectKey)}"
         };

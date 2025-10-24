@@ -34,10 +34,6 @@
                         ItemsSource="{Binding Profiles}"
                         SelectedItem="{Binding SelectedProfile}"/>
 
-                    <Button Content="Apply"
-                        Margin="8,0,8,0"
-                        Command="{Binding ApplyProfileCommand}"/>
-
                     <Button Content="Ping"
                         Margin="0,0,8,0"
                         Command="{Binding PingCommand}"/>

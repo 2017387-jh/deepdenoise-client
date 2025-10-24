@@ -23,7 +23,7 @@ public sealed class GrpcInvokeService
         CancellationToken ct)
     {
         // 채널 생성 (ALB gRPC는 h2 over TLS)
-        var endpoint = _settings.Active.GrpcUri.ToString();
+        var endpoint = _settings.ActiveProfile.GrpcUri.ToString();
         var channel = GrpcChannel.ForAddress(endpoint, new GrpcChannelOptions
         {
             // 필요시 핸들러 커스터마이즈 (프록시/인증서 등)

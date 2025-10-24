@@ -16,7 +16,7 @@ public sealed class HealthService
         try
         {
             using var cts = new CancellationTokenSource(timeoutMs);
-            using var resp = await _http.GetAsync(_settings.Active.HealthUri, cts.Token);
+            using var resp = await _http.GetAsync(_settings.ActiveProfile.HealthUri, cts.Token);
             if (!resp.IsSuccessStatusCode) return false;
 
             // {"status":"ok","timestamp":"2025-10-22T..."}

@@ -27,13 +27,15 @@ public partial class GrpcViewModel : ObservableObject
         "  \"height\": 3072,\n" +
         "  \"using_bits\": 16,\n" +
         "  \"digital_offset\": 100\n" +
+        "  \"img_input_url\": \"s3://ddn-in-bucket/user/static_demo_140um_madible_VD-1.tif\"\n" +
+        "  \"img_output_url\": \"s3://ddn-out-bucket/user/output_static_demo_140um_madible_VD-1.tif\"\n" +
         "}";
     [ObservableProperty] private string responseText = "";
 
     public GrpcViewModel(SettingsService settings, GrpcInvokeService grpc)
     { _settings = settings; _grpc = grpc; RefreshFromSettings(); }
 
-    public void RefreshFromSettings() => GrpcEndpoint = _settings.Active.GrpcUri.ToString();
+    public void RefreshFromSettings() => GrpcEndpoint = _settings.ActiveProfile.GrpcUri.ToString();
 
     [RelayCommand(IncludeCancelCommand = true)]
     private async Task InvokeAsync(CancellationToken ct)
