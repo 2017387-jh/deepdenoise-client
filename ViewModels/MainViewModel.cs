@@ -4,6 +4,8 @@ using DeepDenoiseClient.Services.Alb;
 using DeepDenoiseClient.Services.Common;
 using Grpc.Net.Client.Balancer;
 using System.Collections.ObjectModel;
+using System.Windows;
+using System.Windows.Threading;
 
 namespace DeepDenoiseClient.ViewModels;
 
@@ -11,6 +13,7 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly SettingsService _settings;
     private readonly HealthService _health;
+    private readonly RunLogService _log;
 
     public HttpViewModel HttpVM { get; }
 
@@ -19,9 +22,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string pingResult = "N/A";
     public ObservableCollection<string> Logs { get; } = new();
 
-    public MainViewModel(SettingsService settings, HealthService health, HttpViewModel httpVM)
+    public MainViewModel(SettingsService settings, HealthService health, HttpViewModel httpVM, RunLogService log)
     {
-        _settings = settings; _health = health; HttpVM = httpVM;
+        _settings = settings; _health = health; HttpVM = httpVM; _log = log;
+        _log.Line += s => Application.Current.Dispatcher.Invoke(() => Logs.Add(s));
 
         // 추가: appsettings의 모든 프로필 이름으로 채우기
         Profiles.Clear();
@@ -37,8 +41,9 @@ public partial class MainViewModel : ObservableObject
     {
         _settings.SetActiveProfile(value);
         HttpVM.RefreshFromSettings();
-        Logs.Add($"Profile switched to {value}");
-        Logs.Add($"API Base {HttpVM.ApiBase}");
+
+        _log.Info($"Profile switched to {value}");
+        _log.Info($"API Base {_settings.ActiveProfile.InvokeUri}");
     }
 
 
@@ -55,6 +60,6 @@ public partial class MainViewModel : ObservableObject
     {
         var ok = await _health.CheckAsync();
         PingResult = ok ? "OK" : "FAIL";
-        Logs.Add($"Ping {PingResult} {_settings.ActiveProfile.HealthUri}");
+        _log.Info($"Ping {PingResult} {_settings.ActiveProfile.HealthUri}");
     }
 }

@@ -1,14 +1,17 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DeepDenoiseClient.Models;
 using DeepDenoiseClient.Services.Alb;
 using DeepDenoiseClient.Services.Common;
 using DeepDenoiseClient.Services.Lambda;
+using DeepDenoiseClient.Utils;
+using Microsoft.Win32;
 using System.IO;
 using System.Runtime.Intrinsics.Arm;
+using System.Security.Principal;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Microsoft.Win32;
-using DeepDenoiseClient.Models;
+using System.Windows.Input;
 
 namespace DeepDenoiseClient.ViewModels;
 
@@ -23,7 +26,7 @@ public partial class HttpViewModel : ObservableObject
     [ObservableProperty] private string apiBase = "";
     [ObservableProperty] private string presignedPutUrl = "";
     [ObservableProperty] private string presignedGetUrl = "";
-    [ObservableProperty] private string filePath = "";
+    [ObservableProperty] private string localFilePath = "";
     [ObservableProperty] private string fileName = ""; // File Name
     [ObservableProperty] private string outputKey = "";
     [ObservableProperty] private string correlationId = Guid.NewGuid().ToString("N");
@@ -82,12 +85,14 @@ public partial class HttpViewModel : ObservableObject
 
         Request = JsonSerializer.Deserialize<InvokeRequestModel>(
             JsonSerializer.Serialize(_settings.ActiveProfile.Defaults))!;
+
+        RebuildUrls();
     }
 
-    partial void OnFilePathChanged(string value)
+    partial void OnLocalFilePathChanged(string value)
     {
         // 보조: ObjectKey가 비어있다면 파일명으로 채워줌
-        if (!string.IsNullOrWhiteSpace(value) && string.IsNullOrWhiteSpace(FileName))
+        if (!string.IsNullOrWhiteSpace(value))
             FileName = Path.GetFileName(value);
 
         RebuildUrls();
@@ -112,9 +117,9 @@ public partial class HttpViewModel : ObservableObject
     {
         var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "Images|*.tif;*.tiff;*.png;*.jpg;*.jpeg|All|*.*" };
         if (dlg.ShowDialog() == true) 
-        { 
-            FilePath = dlg.FileName; 
-            FileName = Path.GetFileName(FilePath); 
+        {
+            LocalFilePath = dlg.FileName; 
+            FileName = Path.GetFileName(LocalFilePath); 
         }
     }
 
@@ -122,7 +127,11 @@ public partial class HttpViewModel : ObservableObject
     private async Task GetUploadUrlAsync(CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(FileName)) throw new InvalidOperationException("object-key가 비었습니다.");
-        var (t, res) = await StopwatchExt.TimeAsync(() => _presign.GetUploadUrlAsync(FileName, ct));
+
+        var account = _settings.ActiveProfile.Name; // 사용자/계정명
+        var key = $"{account}/{FileName}";
+        var(t, res) = await StopwatchExt.TimeAsync(() => _presign.GetUploadUrlAsync(key, ct));
+
         PresignedPutUrl = res.Url;
         _logger.WriteCsv(new RunRecord(DateTimeOffset.UtcNow, CorrelationId, FileName, OutputKey, new[] { new StepTiming("presign_upload", t, 200) }, true, null));
     }
@@ -130,10 +139,10 @@ public partial class HttpViewModel : ObservableObject
     [RelayCommand(IncludeCancelCommand = true)]
     private async Task UploadAsync(CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(PresignedPutUrl) || string.IsNullOrWhiteSpace(FilePath)) return;
-        var total = new FileInfo(FilePath).Length;
+        if (string.IsNullOrWhiteSpace(PresignedPutUrl) || string.IsNullOrWhiteSpace(LocalFilePath)) return;
+        var total = new FileInfo(LocalFilePath).Length;
         var progress = new Progress<long>(sent => ProgressPercent = total > 0 ? (int)(sent * 100 / total) : 0);
-        var (t, (st, bytes)) = await StopwatchExt.TimeAsync(async () => await _s3.UploadAsync(PresignedPutUrl, FilePath, progress, ct));
+        var (t, (st, bytes)) = await StopwatchExt.TimeAsync(async () => await _s3.UploadAsync(PresignedPutUrl, LocalFilePath, progress, ct));
         _logger.WriteCsv(new RunRecord(DateTimeOffset.UtcNow, CorrelationId, FileName, OutputKey, new[] { new StepTiming("upload", t, st, bytes) }, true, null));
     }
 
@@ -143,7 +152,7 @@ public partial class HttpViewModel : ObservableObject
         if (!string.IsNullOrEmpty(RequestJsonError))
             throw new InvalidOperationException($"요청 JSON이 올바르지 않습니다: {RequestJsonError}");
 
-        using var body = BuildInvokeBody(Request, _settings.ActiveProfile, FileName, FilePath);
+        using var body = BuildInvokeBody(Request, _settings.ActiveProfile, FileName);
         var (t, (st, rsp)) = await StopwatchExt.TimeAsync(async () => await _invoke.InvokeAsync(body.RootElement, CorrelationId, ct));
 
         ResponseJson = JsonSerializer.Serialize(rsp, new JsonSerializerOptions { WriteIndented = true });
@@ -160,7 +169,10 @@ public partial class HttpViewModel : ObservableObject
     private async Task GetDownloadUrlAsync(CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(OutputKey)) throw new InvalidOperationException("output_key가 비었습니다.");
-        var (t, res) = await StopwatchExt.TimeAsync(() => _presign.GetDownloadUrlAsync(OutputKey, ct));
+
+        // OutputKey는 이미 "account/파일명" 형태여야 함
+        var(t, res) = await StopwatchExt.TimeAsync(() => _presign.GetDownloadUrlAsync(OutputKey, ct));
+
         PresignedGetUrl = res.Url;
         _logger.WriteCsv(new RunRecord(DateTimeOffset.UtcNow, CorrelationId, FileName, OutputKey, new[] { new StepTiming("presign_download", t, 200) }, true, null));
     }
@@ -186,19 +198,23 @@ public partial class HttpViewModel : ObservableObject
 
         try
         {
-            if (string.IsNullOrWhiteSpace(FilePath)) throw new InvalidOperationException("파일을 선택하세요.");
-            if (string.IsNullOrWhiteSpace(FileName)) FileName = Path.GetFileName(FilePath);
+            if (string.IsNullOrWhiteSpace(LocalFilePath)) throw new InvalidOperationException("파일을 선택하세요.");
+            if (string.IsNullOrWhiteSpace(FileName)) FileName = Path.GetFileName(LocalFilePath);
             inKey = FileName;
 
-            var (t1, upPre) = await StopwatchExt.TimeAsync(() => _presign.GetUploadUrlAsync(FileName, ct));
-            PresignedPutUrl = upPre.Url; steps.Add(new StepTiming("presign_upload", t1, 200));
+            var account = _settings.ActiveProfile.Name;
+            var uploadKey = $"{account}/{FileName}";
+            var(t1, upPre) = await StopwatchExt.TimeAsync(() => _presign.GetUploadUrlAsync(uploadKey, ct));
 
-            var total = new FileInfo(FilePath).Length;
+            PresignedPutUrl = upPre.Url; 
+            steps.Add(new StepTiming("presign_upload", t1, 200));
+
+            var total = new FileInfo(LocalFilePath).Length;
             var progress = new Progress<long>(sent => ProgressPercent = total > 0 ? (int)(sent * 100 / total) : 0);
-            var (t2, (stUp, bytesUp)) = await StopwatchExt.TimeAsync(async () => await _s3.UploadAsync(PresignedPutUrl, FilePath, progress, ct));
+            var (t2, (stUp, bytesUp)) = await StopwatchExt.TimeAsync(async () => await _s3.UploadAsync(PresignedPutUrl, LocalFilePath, progress, ct));
             steps.Add(new StepTiming("upload", t2, stUp, bytesUp));
 
-            using var body = BuildInvokeBody(Request, _settings.ActiveProfile, inKey, FilePath);
+            using var body = BuildInvokeBody(Request, _settings.ActiveProfile, uploadKey);
             var (t3, (stInv, rsp)) = await StopwatchExt.TimeAsync(async () => await _invoke.InvokeAsync(body.RootElement, CorrelationId, ct));
             ResponseJson = JsonSerializer.Serialize(rsp, new JsonSerializerOptions { WriteIndented = true });
             steps.Add(new StepTiming("invoke", t3, stInv));
@@ -206,6 +222,7 @@ public partial class HttpViewModel : ObservableObject
             outKey = TryPickOutputKeyFromS3Url(rsp) ?? outKey; OutputKey = outKey;
 
             var (t4, downPre) = await StopwatchExt.TimeAsync(() => _presign.GetDownloadUrlAsync(outKey, ct));
+
             PresignedGetUrl = downPre.Url; steps.Add(new StepTiming("presign_download", t4, 200));
 
             var sfd = new Microsoft.Win32.SaveFileDialog { FileName = $"result_{outKey}" };
@@ -225,20 +242,8 @@ public partial class HttpViewModel : ObservableObject
     }
 
     // helpers
-    private static JsonDocument BuildInvokeBody(InvokeRequestModel req, ProfileInfo profileInfo, string objectKey, string filePath)
+    private static JsonDocument BuildInvokeBody(InvokeRequestModel req, ProfileInfo profileInfo, string objectKey)
     {
-        // 계정명 = 현재 선택된 프로필명
-        var account = profileInfo.Name;
-
-        // 파일명 결정: FileName가 비어있으면 filePath에서
-        var fileName = !string.IsNullOrWhiteSpace(objectKey)
-            ? objectKey
-            : (!string.IsNullOrWhiteSpace(filePath) ? Path.GetFileName(filePath) : "");
-
-        // URL 주입
-        req.ImgInputUrl = fileName is null ? null : $"s3://{profileInfo.InBucket}/{fileName}";
-        req.ImgOutputUrl = fileName is null ? null : $"s3://{profileInfo.OutBucket}/{fileName}";
-
         // 직렬화 → JsonDocument
         var bytes = JsonSerializer.SerializeToUtf8Bytes(req);
         return JsonDocument.Parse(bytes);
@@ -270,15 +275,30 @@ public partial class HttpViewModel : ObservableObject
         // input 파일명: ObjectKey 우선, 없으면 FilePath에서 추출
         var objectKey = !string.IsNullOrWhiteSpace(FileName)
             ? FileName
-            : (!string.IsNullOrWhiteSpace(FilePath) ? Path.GetFileName(FilePath) : null);
+            : (!string.IsNullOrWhiteSpace(LocalFilePath) ? Path.GetFileName(LocalFilePath) : null);
 
-        // S3 키 조합
-        var s3InKey = string.IsNullOrWhiteSpace(objectKey) ? null : $"{account}/{objectKey}";
-        var s3OutKey = string.IsNullOrWhiteSpace(objectKey) ? null : $"{account}/{objectKey}";
+        if(string.IsNullOrWhiteSpace(objectKey))
+        {
+            Request.ImgInputUrl = profile.Defaults.ImgInputUrl;
+            Request.ImgOutputUrl = profile.Defaults.ImgOutputUrl;
 
-        // Request 안의 URL 업데이트
-        Request.ImgInputUrl = s3InKey is null ? null : $"s3://{profile.InBucket}/{s3InKey}";
-        Request.ImgOutputUrl = s3OutKey is null ? null : $"s3://{profile.OutBucket}/{s3OutKey}";
+            FileName = PathUtil.GetFileNameFromUrlOrPath(Request.ImgInputUrl);
+            
+            if(string.IsNullOrWhiteSpace(LocalFilePath))
+            {
+                LocalFilePath = ".\\" + FileName;
+            }
+        }
+        else
+        {
+            // S3 키 조합
+            var s3InKey = string.IsNullOrWhiteSpace(objectKey) ? null : $"{account}/{objectKey}";
+            var s3OutKey = string.IsNullOrWhiteSpace(objectKey) ? null : $"{account}/{objectKey}";
+
+            // Request 안의 URL 업데이트
+            Request.ImgInputUrl = s3InKey is null ? null : $"s3://{profile.InBucket}/{s3InKey}";
+            Request.ImgOutputUrl = s3OutKey is null ? null : $"s3://{profile.OutBucket}/{s3OutKey}";
+        }
 
         // JSON 에디터/프리뷰 갱신 알림
         OnPropertyChanged(nameof(RequestJsonEditable));

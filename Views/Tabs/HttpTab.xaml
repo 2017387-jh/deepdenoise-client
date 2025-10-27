@@ -3,8 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="2.5*"/>
-            <ColumnDefinition Width="2.9*"/>
+            <ColumnDefinition Width="2*"/>
+            <ColumnDefinition Width="3*"/>
         </Grid.ColumnDefinitions>
 
         <!-- Left column: flow -->
@@ -18,7 +18,7 @@
                 <!-- File select -->
                 <StackPanel Orientation="Horizontal" Margin="0,6,0,0" VerticalAlignment="Center">
                     <Button Content="Select Image" Command="{Binding HttpVM.PickFileCommand}" />
-                    <TextBlock Text="{Binding HttpVM.FilePath}"
+                    <TextBlock Text="{Binding HttpVM.LocalFilePath}"
                                Margin="8,0,0,0"
                                VerticalAlignment="Center"
                                Foreground="{StaticResource BrushSubText}" />
@@ -31,14 +31,14 @@
                 <!-- Upload Presign -->
                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                     <Button Content="Get Upload URL" Command="{Binding HttpVM.GetUploadUrlCommand}"/>
-                    <Button Content="Cancel" Margin="6,0,0,0" Command="{Binding HttpVM.GetUploadUrlCancelCommand}"/>
+                    <Button Content="Cancel" Command="{Binding HttpVM.GetUploadUrlCancelCommand}"/>
                 </StackPanel>
                 <TextBox Height="44" TextWrapping="Wrap" Text="{Binding HttpVM.PresignedPutUrl}"/>
 
                 <!-- Upload -->
                 <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                     <Button Content="Upload" Command="{Binding HttpVM.UploadCommand}"/>
-                    <Button Content="Cancel" Margin="6,0,0,0" Command="{Binding HttpVM.UploadCancelCommand}"/>
+                    <Button Content="Cancel" Command="{Binding HttpVM.UploadCancelCommand}"/>
                 </StackPanel>
                 <ProgressBar Margin="0,6,0,0"
                              Minimum="0" Maximum="100"
@@ -56,7 +56,7 @@
                 <!-- Download Presign -->
                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                     <Button Content="Output URL" Command="{Binding HttpVM.GetDownloadUrlCommand}"/>
-                    <Button Content="Cancel" Margin="6,0,0,0" Command="{Binding HttpVM.GetDownloadUrlCancelCommand}"/>
+                    <Button Content="Cancel" Command="{Binding HttpVM.GetDownloadUrlCancelCommand}"/>
                 </StackPanel>
                 <TextBox Height="44" TextWrapping="Wrap" Text="{Binding HttpVM.PresignedGetUrl}"/>
 
@@ -70,7 +70,6 @@
                     </Button>
 
                     <Button Padding="10"
-                            Margin="6,0,0,0"
                             Command="{Binding HttpVM.RunAllCancelCommand}"
                             HorizontalContentAlignment="Center"
                             VerticalContentAlignment="Center"

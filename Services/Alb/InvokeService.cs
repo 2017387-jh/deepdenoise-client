@@ -10,10 +10,11 @@ public sealed class InvokeService
 {
     private readonly HttpClient _http = new();
     private readonly SettingsService _settings;
+    private readonly RunLogService _log;
 
     public string CorrelationHeaderName { get; set; } = "X-Request-Id";
 
-    public InvokeService(SettingsService settings) { _settings = settings; }
+    public InvokeService(SettingsService settings, RunLogService log) { _settings = settings; _log = log; }
 
     public async Task<(int Status, JsonDocument Body)> InvokeAsync(JsonElement body, string correlationId, CancellationToken ct)
     {
@@ -36,14 +37,15 @@ public sealed class InvokeService
             req.Headers.Accept.Clear();
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            // 상관관계 헤더
             req.Headers.TryAddWithoutValidation(CorrelationHeaderName, correlationId);
 
-            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
-            status = (int)resp.StatusCode;
+            var (elapsed, resp) = await StopwatchExt.TimeAsync(() =>
+                _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct));
 
-            // 응답 본문 읽기
+            status = (int)resp.StatusCode;
             var text = await resp.Content.ReadAsStringAsync(ct);
+
+            _log.Info($"Status {status} in {elapsed.TotalMilliseconds:F0} ms, respLen={(text?.Length ?? 0)}");
 
             if (string.IsNullOrWhiteSpace(text))
                 return (status, JsonDocument.Parse("{\"error\":\"Empty response body\"}"));
@@ -54,20 +56,27 @@ public sealed class InvokeService
                 var doc = JsonDocument.Parse(text);
                 return (status, doc);
             }
-            catch
+            catch (Exception ex)
             {
                 // 비JSON 응답일 때도 안전하게 감싸서 반환
                 var safe = text.Replace("\\", "\\\\").Replace("\"", "\\\"");
                 var err = JsonDocument.Parse($"{{\"error\":\"Non-JSON response\",\"raw\":\"{safe}\"}}");
+
+                _log.Error($"Response is not JSON. {ex.GetType().Name}: {ex.Message}");
+
                 return (status, err);
             }
         }
         catch (OperationCanceledException)
         {
+            _log.Warn("Invoke canceled.");
+
             throw;
         }
         catch (Exception ex)
         {
+            _log.Error("Invoke failed.", ex);
+
             var msg = ex.Message.Replace("\\", "\\\\").Replace("\"", "\\\"");
             var err = JsonDocument.Parse($"{{\"error\":\"{msg}\"}}");
             return (500, err);

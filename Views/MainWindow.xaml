@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:DeepDenoiseClient.Views.Tabs"
         Title="Deep Denoise Client"
-        Width="1180" Height="900"
+        Width="1680" Height="900"
         Background="{StaticResource BrushBg}"
         WindowStartupLocation="CenterScreen">
 
