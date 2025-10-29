@@ -33,4 +33,19 @@ public sealed class S3TransferService
         }
         return ((int)resp.StatusCode, total);
     }
+
+    public async Task<long> GetContentLengthAsync(string presignedGetUrl, CancellationToken ct)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Head, presignedGetUrl);
+            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (!resp.IsSuccessStatusCode) return -1;
+            return resp.Content.Headers.ContentLength ?? -1;
+        }
+        catch
+        {
+            return -1;
+        }
+    }
 }

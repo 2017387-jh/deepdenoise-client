@@ -2,18 +2,21 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:DeepDenoiseClient.Views.Tabs"
+        xmlns:conv="clr-namespace:DeepDenoiseClient.Utils.Converters"
         Title="Deep Denoise Client"
-        Width="1680" Height="900"
+        Width="1680" Height="950"
         Background="{StaticResource BrushBg}"
         WindowStartupLocation="CenterScreen">
 
     <!-- Outer grid: header row + content row -->
     <Grid Margin="16">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
             <!-- header -->
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
             <!-- content -->
+            <RowDefinition Height="*"/>
+            <!-- status bar -->
+            <RowDefinition Height="28"/>
         </Grid.RowDefinitions>
 
         <!-- Header (spans both columns) -->
@@ -58,9 +61,9 @@
         <!-- Content row: left = tabs, right = logs -->
         <Grid Grid.Row="1" Margin="0,16,0,0">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="3*"/>
+                <ColumnDefinition Width="800"/>
                 <!-- main work area -->
-                <ColumnDefinition Width="1.2*"/>
+                <ColumnDefinition Width="*"/>
                 <!-- logs -->
             </Grid.ColumnDefinitions>
 
@@ -77,7 +80,8 @@
             </Border>
 
             <!-- Right: Logs panel (full-height, scrollable) -->
-            <Border Grid.Column="1" Style="{StaticResource Card}">
+            <Border Grid.Column="1" 
+                    Style="{StaticResource Card}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -86,17 +90,73 @@
 
                     <TextBlock Text="Logs" Style="{StaticResource SectionTitle}"/>
 
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding Logs}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Foreground="{StaticResource BrushSubText}" Text="{Binding}"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                    <DataGrid Grid.Row="1"
+                              ItemsSource="{Binding LogEntries}"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              IsReadOnly="True"
+                              HeadersVisibility="Column"
+                              RowHeaderWidth="0"
+                              FontFamily="Consolas"
+                              FontSize="13"
+                              Width="Auto"
+                              HorizontalAlignment="Left"
+                              ScrollViewer.HorizontalScrollBarVisibility="Visible"
+                              Margin="0,4,0,0">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Time"
+                                                Binding="{Binding Timestamp, StringFormat=HH:mm:ss.fff}"
+                                                Width="110"
+                                                SortDirection="Ascending"/>
+                            <DataGridTextColumn Header="Level" Binding="{Binding Level}" Width="60"/>
+                            <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="120"/>
+                            <DataGridTextColumn Header="Elapsed(s)" Binding="{Binding ElapsedMs, Converter={StaticResource ElapsedMsToSecConverter}}" Width="90"/>
+                            <DataGridTextColumn Header="Status"
+                                                Binding="{Binding HttpStatus, Converter={StaticResource HttpDisplayConverter}, ConverterParameter=Status}"
+                                                Width="110"/>
+                            <DataGridTextColumn Header="KiloBytes" Binding="{Binding KiloBytes}" Width="80"/>
+                            <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="700"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
                 </Grid>
             </Border>
         </Grid>
+        <Border Grid.Row="2"
+            Background="{StaticResource BrushCard}"
+            Padding="8,0"
+            BorderThickness="1"
+            BorderBrush="{StaticResource BrushBorder}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <!-- Status -->
+                    <ColumnDefinition Width="Auto"/>
+                    <!-- Message -->
+                    <ColumnDefinition Width="*"/>
+                    <!-- Elapsed -->
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Success / Fail -->
+                <TextBlock Grid.Column="0"
+                       Margin="0,0,8,0"
+                       VerticalAlignment="Center"
+                       Foreground="{StaticResource BrushSubText}"
+                       Text="{Binding Status.Status}"/>
+
+                <!-- Message -->
+                <TextBlock Grid.Column="1"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"
+                       Text="{Binding Status.Message}"/>
+
+                <!-- Elapsed (mm:ss) -->
+                <TextBlock Grid.Column="2"
+                       Margin="12,0,0,0"
+                       VerticalAlignment="Center"
+                       Foreground="{StaticResource BrushSubText}"
+                       Text="{Binding Status.Elapsed, StringFormat={}{0:mm\\:ss\\.ff}, TargetNullValue=00:00.00}" />
+            </Grid>
+        </Border>
     </Grid>
 </Window>

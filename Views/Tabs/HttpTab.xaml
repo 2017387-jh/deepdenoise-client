@@ -15,6 +15,10 @@
                 <TextBlock Text="API Base" Style="{StaticResource LabelText}"/>
                 <TextBox Text="{Binding HttpVM.ApiBase}" />
 
+                <!-- Correlation Id -->
+                <TextBlock Text="Correlation Id" Style="{StaticResource LabelText}" Margin="0,0,0,0"/>
+                <TextBox Text="{Binding HttpVM.CorrelationId}" />
+
                 <!-- File select -->
                 <StackPanel Orientation="Horizontal" Margin="0,6,0,0" VerticalAlignment="Center">
                     <Button Content="Select Image" Command="{Binding HttpVM.PickFileCommand}" />
@@ -26,7 +30,11 @@
 
                 <!-- S3 Object Key -->
                 <TextBlock Text="S3 Object Key" Style="{StaticResource LabelText}" Margin="0,6,0,0"/>
-                <TextBox Text="{Binding HttpVM.FileName}" />
+                <TextBox Text="{Binding HttpVM.ObjectKey}" />
+
+                <Separator Margin="0,12,0,12"/>
+
+                <TextBlock Text="Upload" Style="{StaticResource LabelText}" Margin="0,0,0,0"/>
 
                 <!-- Upload Presign -->
                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
@@ -42,23 +50,24 @@
                 </StackPanel>
                 <ProgressBar Margin="0,6,0,0"
                              Minimum="0" Maximum="100"
-                             Value="{Binding HttpVM.ProgressPercent}"/>
+                             Value="{Binding HttpVM.UploadProgressPercent}"/>
 
                 <Separator Margin="0,12,0,12"/>
 
-                <!-- Output options -->
-                <TextBlock Text="Output Key (Option)" Style="{StaticResource LabelText}"/>
-                <TextBox Text="{Binding HttpVM.OutputKey}" />
-
-                <TextBlock Text="Correlation Id" Style="{StaticResource LabelText}" Margin="0,6,0,0"/>
-                <TextBox Text="{Binding HttpVM.CorrelationId}" />
+                <TextBlock Text="Download" Style="{StaticResource LabelText}" Margin="0,0,0,0"/>
 
                 <!-- Download Presign -->
                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                    <Button Content="Output URL" Command="{Binding HttpVM.GetDownloadUrlCommand}"/>
+                    <Button Content="Get Download URL" Command="{Binding HttpVM.GetDownloadUrlCommand}"/>
                     <Button Content="Cancel" Command="{Binding HttpVM.GetDownloadUrlCancelCommand}"/>
                 </StackPanel>
                 <TextBox Height="44" TextWrapping="Wrap" Text="{Binding HttpVM.PresignedGetUrl}"/>
+
+                <ProgressBar Margin="0,6,0,0"
+                             Minimum="0" Maximum="100"
+                             Value="{Binding HttpVM.DownloadProgressPercent}"/>
+
+                <Separator Margin="0,12,0,12"/>
 
                 <!-- Run All -->
                 <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
@@ -82,15 +91,10 @@
         <!-- Right column: request/response -->
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
-                <!-- Request 제목 -->
-                <RowDefinition Height="Auto"/> 
-                <!-- Request JSON 에디터(가변) -->
-                <RowDefinition Height="*"/> 
-                <!-- 버튼들 -->
-                <RowDefinition Height="Auto"/> 
-                <!-- Response 제목 -->
                 <RowDefinition Height="Auto"/>
-                <!-- Response JSON 박스(가변) -->
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
@@ -100,7 +104,6 @@
                Style="{StaticResource SectionTitle}"/>
 
             <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,4,0,0">
-                <!-- 안쪽은 DockPanel로 에러 라벨만 아래쪽 도킹 -->
                 <DockPanel LastChildFill="True">
                     <!-- 에러 메시지 -->
                     <TextBlock DockPanel.Dock="Bottom"
@@ -127,13 +130,13 @@
             <!-- Invoke / Actions -->
             <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,12">
                 <Button Margin="0,0,0,0"
-                Command="{Binding HttpVM.InvokeCommand}">
+                        Command="{Binding HttpVM.InvokeCommand}">
                     <TextBlock Text="Send&#10;(/invocations)" TextAlignment="Center"/>
                 </Button>
                 <Button Content="Cancel" Margin="12,0,0,0"
-                Command="{Binding HttpVM.InvokeCancelCommand}"/>
+                        Command="{Binding HttpVM.InvokeCancelCommand}"/>
                 <Button Content="Reset to Defaults" Margin="12,0,0,0"
-                Command="{Binding HttpVM.ResetRequestToDefaultsCommand}"/>
+                        Command="{Binding HttpVM.ResetRequestToDefaultsCommand}"/>
             </StackPanel>
 
             <!-- Response -->

@@ -6,11 +6,14 @@ using DeepDenoiseClient.Services.Common;
 using DeepDenoiseClient.Services.Lambda;
 using DeepDenoiseClient.Utils;
 using Microsoft.Win32;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Runtime.Intrinsics.Arm;
 using System.Security.Principal;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Windows;
 using System.Windows.Input;
 
 namespace DeepDenoiseClient.ViewModels;
@@ -22,15 +25,17 @@ public partial class HttpViewModel : ObservableObject
     private readonly S3TransferService _s3;
     private readonly InvokeService _invoke;
     private readonly RunLogService _logger;
+    private readonly IStatusbarService _statusbar;
 
     [ObservableProperty] private string apiBase = "";
     [ObservableProperty] private string presignedPutUrl = "";
     [ObservableProperty] private string presignedGetUrl = "";
     [ObservableProperty] private string localFilePath = "";
     [ObservableProperty] private string fileName = ""; // File Name
-    [ObservableProperty] private string outputKey = "";
+    [ObservableProperty] private string objectKey = "";
     [ObservableProperty] private string correlationId = Guid.NewGuid().ToString("N");
-    [ObservableProperty] private int progressPercent;
+    [ObservableProperty] private int uploadProgressPercent;
+    [ObservableProperty] private int downloadProgressPercent;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RequestJsonEditable))]
@@ -50,13 +55,13 @@ public partial class HttpViewModel : ObservableObject
         {
             if (string.IsNullOrWhiteSpace(value))
             {
-                RequestJsonError = "빈 JSON 입니다.";
+                RequestJsonError = "Empty JSON";
                 return;
             }
             try
             {
                 var parsed = JsonSerializer.Deserialize<InvokeRequestModel>(value);
-                if (parsed is null) throw new InvalidOperationException("파싱 결과가 null 입니다.");
+                if (parsed is null) throw new InvalidOperationException("Parsed result is null.");
                 Request = parsed;                  // 모델 갱신
                 RequestJsonError = null;           // 에러 초기화
                 OnPropertyChanged(nameof(RequestPreviewJson)); // 프리뷰 쓰면 갱신
@@ -68,14 +73,20 @@ public partial class HttpViewModel : ObservableObject
         }
     }
 
-    public HttpViewModel(SettingsService settings, PresignService presign, S3TransferService s3, InvokeService invoke, RunLogService logger)
+    public HttpViewModel(SettingsService settings, 
+        PresignService presign, 
+        S3TransferService s3, 
+        InvokeService invoke, 
+        RunLogService logger,
+        IStatusbarService statusbar)
     { 
         _settings = settings; 
         _presign = presign; 
         _s3 = s3; 
         _invoke = invoke; 
-        _logger = logger; 
-        
+        _logger = logger;
+        _statusbar = statusbar;
+
         RefreshFromSettings(); 
     }
 
@@ -86,6 +97,13 @@ public partial class HttpViewModel : ObservableObject
         Request = JsonSerializer.Deserialize<InvokeRequestModel>(
             JsonSerializer.Serialize(_settings.ActiveProfile.Defaults))!;
 
+        UpdateObjectKey();
+        RebuildUrls();
+    }
+
+    partial void OnFileNameChanged(string value)
+    {
+        UpdateObjectKey();
         RebuildUrls();
     }
 
@@ -95,11 +113,6 @@ public partial class HttpViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(value))
             FileName = Path.GetFileName(value);
 
-        RebuildUrls();
-    }
-
-    partial void OnOutputKeyChanged(string value)
-    {
         RebuildUrls();
     }
 
@@ -126,24 +139,65 @@ public partial class HttpViewModel : ObservableObject
     [RelayCommand(IncludeCancelCommand = true)]
     private async Task GetUploadUrlAsync(CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(FileName)) throw new InvalidOperationException("object-key가 비었습니다.");
+        if (string.IsNullOrWhiteSpace(FileName))
+        {
+            throw new InvalidOperationException($"object-key(file name) is empty");
+        }
 
-        var account = _settings.ActiveProfile.Name; // 사용자/계정명
-        var key = $"{account}/{FileName}";
-        var(t, res) = await StopwatchExt.TimeAsync(() => _presign.GetUploadUrlAsync(key, ct));
+        using (_statusbar.Begin())
+        {
+            var account = _settings.ActiveProfile.Name; // 사용자/계정명
+            var key = ObjectKey;
+            var (t, res) = await StopwatchExt.TimeAsync(() => _presign.GetUploadUrlAsync(key, ct));
 
-        PresignedPutUrl = res.Url;
-        _logger.WriteCsv(new RunRecord(DateTimeOffset.UtcNow, CorrelationId, FileName, OutputKey, new[] { new StepTiming("presign_upload", t, 200) }, true, null));
+            PresignedPutUrl = res.Url;
+            _logger.Info($"presign upload ok cid={CorrelationId}", path: $"/presign(upload)", elapsed: t, httpStatus: 200);
+
+            _statusbar.Success("Upload URL has been generated");
+        }
     }
 
     [RelayCommand(IncludeCancelCommand = true)]
     private async Task UploadAsync(CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(PresignedPutUrl) || string.IsNullOrWhiteSpace(LocalFilePath)) return;
-        var total = new FileInfo(LocalFilePath).Length;
-        var progress = new Progress<long>(sent => ProgressPercent = total > 0 ? (int)(sent * 100 / total) : 0);
-        var (t, (st, bytes)) = await StopwatchExt.TimeAsync(async () => await _s3.UploadAsync(PresignedPutUrl, LocalFilePath, progress, ct));
-        _logger.WriteCsv(new RunRecord(DateTimeOffset.UtcNow, CorrelationId, FileName, OutputKey, new[] { new StepTiming("upload", t, st, bytes) }, true, null));
+        if (string.IsNullOrWhiteSpace(LocalFilePath) || !File.Exists(LocalFilePath))
+        {
+            _logger.Warn("There is no file to upload.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(PresignedPutUrl))
+        {
+            _logger.Warn("Presigned url is assigned");
+            return;
+        }
+
+        using (_statusbar.Begin())
+        {
+
+            try
+            {
+                var total = new FileInfo(LocalFilePath).Length;
+                var progress = new Progress<long>(sent => UploadProgressPercent = total > 0 ? (int)(sent * 100 / total) : 0);
+                var (t, (st, bytes)) = await StopwatchExt.TimeAsync(async () => await _s3.UploadAsync(PresignedPutUrl, LocalFilePath, progress, ct));
+                
+                _logger.Info($"upload ok cid={CorrelationId}", path: "upload", elapsed: t, httpStatus: st, bytes: bytes);
+
+                _statusbar.Success("Upload completed");
+            }
+            catch (OperationCanceledException)
+            {
+                _statusbar.Fail("Upload canceled");
+                _logger.Warn("Upload canceled", path: "http/upload");
+            }
+            catch (System.Exception ex)
+            {
+                _statusbar.Fail("Upload failed");
+                _logger.Error("Upload failed", ex, path: "http/upload");
+            }
+        }
+
+
     }
 
     [RelayCommand(IncludeCancelCommand = true)]
@@ -152,92 +206,167 @@ public partial class HttpViewModel : ObservableObject
         if (!string.IsNullOrEmpty(RequestJsonError))
             throw new InvalidOperationException($"요청 JSON이 올바르지 않습니다: {RequestJsonError}");
 
-        using var body = BuildInvokeBody(Request, _settings.ActiveProfile, FileName);
-        var (t, (st, rsp)) = await StopwatchExt.TimeAsync(async () => await _invoke.InvokeAsync(body.RootElement, CorrelationId, ct));
+        using (_statusbar.Begin())
+        {
 
-        ResponseJson = JsonSerializer.Serialize(rsp, new JsonSerializerOptions { WriteIndented = true });
+            using var body = BuildInvokeBody(Request, _settings.ActiveProfile, FileName);
+            var (t, (st, rsp)) = await StopwatchExt.TimeAsync(async () => await _invoke.InvokeAsync(body.RootElement, CorrelationId, ct));
 
-        var outKey = TryPickOutputKeyFromS3Url(rsp);
-        if (!string.IsNullOrWhiteSpace(outKey)) OutputKey = outKey!;
+            ResponseJson = JsonSerializer.Serialize(rsp, new JsonSerializerOptions { WriteIndented = true });
 
-        _logger.WriteCsv(new RunRecord(DateTimeOffset.UtcNow, CorrelationId, FileName, OutputKey,
-            new[] { new StepTiming("invoke", t, st) }, true, null));
-        CorrelationId = Guid.NewGuid().ToString("N");
+            _logger.Info($"invoke ok cid={CorrelationId}", path: $"/invacations", elapsed: t, httpStatus: st);
+            CorrelationId = Guid.NewGuid().ToString("N");
+
+            _statusbar.Success("Invocation is completed");
+        }
     }
 
     [RelayCommand(IncludeCancelCommand = true)]
     private async Task GetDownloadUrlAsync(CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(OutputKey)) throw new InvalidOperationException("output_key가 비었습니다.");
+        using(_statusbar.Begin())
+        {
+            if (string.IsNullOrWhiteSpace(ObjectKey))
+            {
+                MessageBox.Show("Output Key is empty. Please specify the output key before generating the download URL.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
 
-        // OutputKey는 이미 "account/파일명" 형태여야 함
-        var(t, res) = await StopwatchExt.TimeAsync(() => _presign.GetDownloadUrlAsync(OutputKey, ct));
+            // ObjectKey는 이미 "account/파일명" 형태여야 함
+            var (t, res) = await StopwatchExt.TimeAsync(() => _presign.GetDownloadUrlAsync(ObjectKey, ct));
 
-        PresignedGetUrl = res.Url;
-        _logger.WriteCsv(new RunRecord(DateTimeOffset.UtcNow, CorrelationId, FileName, OutputKey, new[] { new StepTiming("presign_download", t, 200) }, true, null));
+            PresignedGetUrl = res.Url;
+            _logger.Info($"presign download ok cid={CorrelationId}", path: $"/presign(download)", elapsed: t, httpStatus: 200);
+
+            _statusbar.Success("Download URL has been generated");
+        }
     }
 
     [RelayCommand(IncludeCancelCommand = true)]
     private async Task DownloadAsync(CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(PresignedGetUrl)) return;
-        var sfd = new Microsoft.Win32.SaveFileDialog { FileName = $"result_{OutputKey}" };
-        if (sfd.ShowDialog() != true) return;
-        var (t, (st, bytes)) = await StopwatchExt.TimeAsync(async () => await _s3.DownloadAsync(PresignedGetUrl, sfd.FileName, new Progress<long>(_ => { }), ct));
-        _logger.WriteCsv(new RunRecord(DateTimeOffset.UtcNow, CorrelationId, FileName, OutputKey, new[] { new StepTiming("download", t, st, bytes) }, true, null));
+
+        using (_statusbar.Begin())
+        {
+            try
+            {
+                var downloadRoot = Path.Combine(AppContext.BaseDirectory, "download");
+                // outKey 내 구분자를 OS 기준으로 맞춰서 경로 생성
+                var destPath = Path.Combine(downloadRoot, ObjectKey.Replace('/', Path.DirectorySeparatorChar)
+                                                               .Replace('\\', Path.DirectorySeparatorChar));
+
+                // 하위 디렉터리까지 생성
+                Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+
+                var total = await _s3.GetContentLengthAsync(PresignedGetUrl, ct);
+
+                var progress = new Progress<long>(received =>
+                {
+                    if (total > 0)
+                        DownloadProgressPercent = (int)(received * 100 / total);
+                });
+
+                // Download
+                var (t5, (stDown, bytesDown)) = await StopwatchExt.TimeAsync(async () =>
+                    await _s3.DownloadAsync(PresignedGetUrl, destPath, progress, ct));
+
+                // Finish as 100 %
+                DownloadProgressPercent = 100;
+
+                _logger.Info($"download ok cid={CorrelationId} -> {destPath}", path: $"/download", elapsed: t5, httpStatus: stDown, bytes: bytesDown);
+
+                _statusbar.Success("Download completed");
+            }
+            catch (OperationCanceledException)
+            {
+                _statusbar.Fail("Download canceled");
+                _logger.Warn("Download canceled", path: "http/download");
+            }
+            catch (System.Exception ex)
+            {
+                _statusbar.Fail("Download failed");
+                _logger.Error("Download failed", ex, path: "http/download");
+            }
+        }
     }
 
     [RelayCommand(IncludeCancelCommand = true)]
     private async Task RunAllAsync(CancellationToken ct)
     {
         if (!string.IsNullOrEmpty(RequestJsonError))
-            throw new InvalidOperationException($"요청 JSON이 올바르지 않습니다: {RequestJsonError}");
+            throw new InvalidOperationException($"JSON is invalid: {RequestJsonError}");
 
-        var started = DateTimeOffset.UtcNow; var steps = new List<StepTiming>(); var ok = false; string? err = null;
-        var inKey = FileName; var outKey = OutputKey;
+        var started = Stopwatch.GetTimestamp();
 
-        try
+        using (_statusbar.Begin())
         {
-            if (string.IsNullOrWhiteSpace(LocalFilePath)) throw new InvalidOperationException("파일을 선택하세요.");
-            if (string.IsNullOrWhiteSpace(FileName)) FileName = Path.GetFileName(LocalFilePath);
-            inKey = FileName;
-
-            var account = _settings.ActiveProfile.Name;
-            var uploadKey = $"{account}/{FileName}";
-            var(t1, upPre) = await StopwatchExt.TimeAsync(() => _presign.GetUploadUrlAsync(uploadKey, ct));
-
-            PresignedPutUrl = upPre.Url; 
-            steps.Add(new StepTiming("presign_upload", t1, 200));
-
-            var total = new FileInfo(LocalFilePath).Length;
-            var progress = new Progress<long>(sent => ProgressPercent = total > 0 ? (int)(sent * 100 / total) : 0);
-            var (t2, (stUp, bytesUp)) = await StopwatchExt.TimeAsync(async () => await _s3.UploadAsync(PresignedPutUrl, LocalFilePath, progress, ct));
-            steps.Add(new StepTiming("upload", t2, stUp, bytesUp));
-
-            using var body = BuildInvokeBody(Request, _settings.ActiveProfile, uploadKey);
-            var (t3, (stInv, rsp)) = await StopwatchExt.TimeAsync(async () => await _invoke.InvokeAsync(body.RootElement, CorrelationId, ct));
-            ResponseJson = JsonSerializer.Serialize(rsp, new JsonSerializerOptions { WriteIndented = true });
-            steps.Add(new StepTiming("invoke", t3, stInv));
-
-            outKey = TryPickOutputKeyFromS3Url(rsp) ?? outKey; OutputKey = outKey;
-
-            var (t4, downPre) = await StopwatchExt.TimeAsync(() => _presign.GetDownloadUrlAsync(outKey, ct));
-
-            PresignedGetUrl = downPre.Url; steps.Add(new StepTiming("presign_download", t4, 200));
-
-            var sfd = new Microsoft.Win32.SaveFileDialog { FileName = $"result_{outKey}" };
-            if (sfd.ShowDialog() == true)
+            try
             {
-                var (t5, (stDown, bytesDown)) = await StopwatchExt.TimeAsync(async () => await _s3.DownloadAsync(PresignedGetUrl, sfd.FileName, new Progress<long>(_ => { }), ct));
-                steps.Add(new StepTiming("download", t5, stDown, bytesDown));
+                if (string.IsNullOrWhiteSpace(LocalFilePath)) throw new InvalidOperationException("Select a file.");
+                if (string.IsNullOrWhiteSpace(FileName)) FileName = Path.GetFileName(LocalFilePath);
+
+                var (t1, upPre) = await StopwatchExt.TimeAsync(() => _presign.GetUploadUrlAsync(ObjectKey, ct));
+
+                PresignedPutUrl = upPre.Url;
+                _logger.Info($"presign upload ok cid={CorrelationId}", path: $"/presign(upload)", elapsed: t1, httpStatus: 200);
+
+                var uploadTotal = new FileInfo(LocalFilePath).Length;
+                var uploadProgress = new Progress<long>(sent => UploadProgressPercent = uploadTotal > 0 ? (int)(sent * 100 / uploadTotal) : 0);
+                var (t2, (stUp, bytesUp)) = await StopwatchExt.TimeAsync(async () => await _s3.UploadAsync(PresignedPutUrl, LocalFilePath, uploadProgress, ct));
+                _logger.Info($"upload ok cid={CorrelationId}", path: $"/upload", elapsed: t2, httpStatus: stUp, bytes: bytesUp);
+
+                using var body = BuildInvokeBody(Request, _settings.ActiveProfile, ObjectKey);
+                var (t3, (stInv, rsp)) = await StopwatchExt.TimeAsync(async () => await _invoke.InvokeAsync(body.RootElement, CorrelationId, ct));
+                ResponseJson = JsonSerializer.Serialize(rsp, new JsonSerializerOptions { WriteIndented = true });
+                _logger.Info($"invoke ok cid={CorrelationId}", path: $"/invocations", elapsed: t3, httpStatus: stInv);
+
+
+                var (t4, downPre) = await StopwatchExt.TimeAsync(() => _presign.GetDownloadUrlAsync(ObjectKey, ct));
+                PresignedGetUrl = downPre.Url;
+                _logger.Info($"presign download ok cid={CorrelationId}", path: $"/presign(download)", elapsed: t4, httpStatus: 200);
+
+                var downloadRoot = Path.Combine(AppContext.BaseDirectory, "download");
+                // outKey 내 구분자를 OS 기준으로 맞춰서 경로 생성
+                var destPath = Path.Combine(downloadRoot, ObjectKey.Replace('/', Path.DirectorySeparatorChar)
+                                                               .Replace('\\', Path.DirectorySeparatorChar));
+
+                // 하위 디렉터리까지 생성
+                Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+
+                // 다운로드
+                DownloadProgressPercent = 0;
+                var downloadTotal = await _s3.GetContentLengthAsync(PresignedGetUrl, ct);
+                var downloadProgress = new Progress<long>(received =>
+                {
+                    if (downloadTotal > 0)
+                        DownloadProgressPercent = (int)(received * 100 / downloadTotal);
+                });
+
+                var (t5, (stDown, bytesDown)) = await StopwatchExt.TimeAsync(async () =>
+                    await _s3.DownloadAsync(PresignedGetUrl, destPath, downloadProgress, ct));
+
+                DownloadProgressPercent = 100;
+                _logger.Info($"download ok cid={CorrelationId} -> {destPath}",
+                             path: $"/download", elapsed: t5, httpStatus: stDown, bytes: bytesDown);
+
+                _statusbar.Success("All Steps are completed");
             }
-            ok = true;
-        }
-        catch (Exception ex) { err = ex.Message; }
-        finally
-        {
-            _logger.WriteCsv(new RunRecord(started, CorrelationId, inKey, outKey, steps, ok, err));
-            CorrelationId = Guid.NewGuid().ToString("N");
+            catch (Exception ex)
+            {
+                var totalElapsed = Stopwatch.GetElapsedTime(started); // 총 소요 시간
+
+                _logger.Error($"run all failed cid={CorrelationId}", ex, path: $"/run_all", elapsed: totalElapsed, 503);
+                CorrelationId = Guid.NewGuid().ToString("N");
+                throw;
+            }
+            finally
+            {
+                var totalElapsed = Stopwatch.GetElapsedTime(started); // 총 소요 시간
+
+                _logger.Info($"run all completed cid={CorrelationId}", path: $"/run_all", elapsed: totalElapsed, 200);
+                CorrelationId = Guid.NewGuid().ToString("N");
+            }
         }
     }
 
@@ -282,11 +411,13 @@ public partial class HttpViewModel : ObservableObject
             Request.ImgInputUrl = profile.Defaults.ImgInputUrl;
             Request.ImgOutputUrl = profile.Defaults.ImgOutputUrl;
 
-            FileName = PathUtil.GetFileNameFromUrlOrPath(Request.ImgInputUrl);
-            
-            if(string.IsNullOrWhiteSpace(LocalFilePath))
+            FileName = PathUtil.GetFileNameFromUrlOrPath(Request.ImgInputUrl) == null
+                ? ""
+                : PathUtil.GetFileNameFromUrlOrPath(Request.ImgInputUrl)!;
+
+            if (string.IsNullOrWhiteSpace(LocalFilePath))
             {
-                LocalFilePath = ".\\" + FileName;
+                LocalFilePath = Path.Combine(AppContext.BaseDirectory, FileName);
             }
         }
         else
@@ -305,14 +436,22 @@ public partial class HttpViewModel : ObservableObject
         OnPropertyChanged(nameof(RequestPreviewJson));
     }
 
+    private void UpdateObjectKey()
+    {
+        if (!string.IsNullOrWhiteSpace(FileName) && !string.IsNullOrWhiteSpace(_settings.ActiveProfile?.Name))
+            ObjectKey = $"{_settings.ActiveProfile.Name}/{FileName}";
+        else
+            ObjectKey = "";
+    }
+
     private static string? TryPickOutputKey(JsonDocument d)
     {
         if (d.RootElement.TryGetProperty("output_key", out var v)) return v.GetString();
         if (d.RootElement.TryGetProperty("result_s3_key", out var v2)) return v2.GetString(); return null;
     }
-    private static string? TryPickOutputUrl(JsonDocument d)
+    private static string? TryPickOutputImgUrl(JsonDocument d)
     {
-        if (d.RootElement.TryGetProperty("output_url", out var v)) return v.GetString();
-        if (d.RootElement.TryGetProperty("result_s3_url", out var v2)) return v2.GetString(); return null;
+        if (d.RootElement.TryGetProperty("img_output_url", out var v)) return v.GetString();
+        else return "";
     }
 }

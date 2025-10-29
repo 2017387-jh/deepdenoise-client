@@ -6,6 +6,8 @@
     <Application.Resources>
         <ResourceDictionary>
             <conv:NullToVisibilityConverter x:Key="NullToVisibility"/>
+            <conv:ElapsedMsToSecConverter x:Key="ElapsedMsToSecConverter"/>
+            <conv:HttpDisplayConverter x:Key="HttpDisplayConverter"/>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Themes/Styles.xaml"/>
             </ResourceDictionary.MergedDictionaries>

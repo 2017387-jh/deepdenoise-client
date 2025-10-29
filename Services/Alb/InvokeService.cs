@@ -45,8 +45,6 @@ public sealed class InvokeService
             status = (int)resp.StatusCode;
             var text = await resp.Content.ReadAsStringAsync(ct);
 
-            _log.Info($"Status {status} in {elapsed.TotalMilliseconds:F0} ms, respLen={(text?.Length ?? 0)}");
-
             if (string.IsNullOrWhiteSpace(text))
                 return (status, JsonDocument.Parse("{\"error\":\"Empty response body\"}"));
 

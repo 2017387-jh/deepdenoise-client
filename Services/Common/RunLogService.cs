@@ -1,106 +1,156 @@
-﻿using System.Diagnostics;
+﻿using Microsoft.Extensions.Logging.Abstractions;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using static Grpc.Core.Metadata;
+using DeepDenoiseClient.Models;
 
 namespace DeepDenoiseClient.Services.Common;
-
-public record StepTiming(string Name, TimeSpan Elapsed, int? HttpStatus = null, long? Bytes = null);
-public record RunRecord(DateTimeOffset StartedAt, string CorrelationId, string InputKey, string OutputKey,
-                        IReadOnlyList<StepTiming> Steps, bool Success, string? Error);
-
 public sealed class RunLogService
 {
     private readonly string _dir = Path.Combine(AppContext.BaseDirectory, "logs");
+    private static readonly object _fileLock = new();
+
+    public event Action<LogModel>? Entry;
+
     public RunLogService() { Directory.CreateDirectory(_dir); }
 
-    public void WriteCsv(RunRecord rec)
+    // 화면/VM으로 흘려보내는 한 줄 로그
+    public event Action<string>? Line;
+
+    private static string HttpStatusToString(int code)
+    {
+        return code switch
+        {
+            200 => "OK",
+            201 => "Created",
+            202 => "Accepted",
+            204 => "No Content",
+            400 => "Bad Request",
+            401 => "Unauthorized",
+            403 => "Forbidden",
+            404 => "Not Found",
+            409 => "Conflict",
+            500 => "Internal Server Error",
+            502 => "Bad Gateway",
+            503 => "Service Unavailable",
+            504 => "Gateway Timeout",
+            _ => ""
+        };
+    }
+
+    // 호출 예: Info("업로드 완료", path: "upload", elapsed: sw.Elapsed, httpStatus: 200, bytes: size);
+    public void Info(string message, string? path = null, TimeSpan? elapsed = null, int? httpStatus = null, long? bytes = null)
+        => Emit("INFO", message, path, elapsed, httpStatus, bytes);
+
+    public void Warn(string message, string? path = null, TimeSpan? elapsed = null, int? httpStatus = null, long? bytes = null)
+        => Emit("WARN", message, path, elapsed, httpStatus, bytes);
+
+    public void Error(string message, Exception? ex = null, string? path = null, TimeSpan? elapsed = null, int? httpStatus = null, long? bytes = null)
+    {
+        if (ex != null) message = $"{message} | {ex.GetType().Name}: {ex.Message}";
+        Emit("ERROR", message, path, elapsed, httpStatus, bytes);
+    }
+
+    private void Emit(string level, string msg, string? path, TimeSpan? elapsed, int? httpStatus, long? bytes)
+    {
+        var sb = new StringBuilder();
+        sb.Append($"{DateTime.Now:HH:mm:ss.fff} [{level}] [{path}] {msg}");
+
+        // 동적으로 값이 있을 때만 추가
+        if (elapsed.HasValue)
+            sb.Append($" - elapsed={(elapsed.Value.TotalMilliseconds / 1000).ToString("F2")}s");
+        if (httpStatus.HasValue)
+        {
+            var statusStr = HttpStatusToString(httpStatus.Value);
+            sb.Append($" - httpStatus={httpStatus.Value}({(string.IsNullOrEmpty(statusStr) ? "" : statusStr)})");
+        }
+
+        double kbytes = 0.0f;
+
+        if (bytes.HasValue)
+            kbytes = bytes.Value/1024;
+
+        var line = sb.ToString();
+
+        try { Line?.Invoke(line); } catch { /* swallow */ }
+        Debug.WriteLine(line);
+
+        var entry = new LogModel
+        {
+            Timestamp = DateTimeOffset.Now,
+            Level = level,
+            Path = path ?? "",
+            ElapsedMs = elapsed?.TotalMilliseconds,
+            HttpStatus = httpStatus,
+            KiloBytes = kbytes,
+            Message = msg
+        };
+        try { Entry?.Invoke(entry); } catch { }
+
+        AppendCsv(new CsvRow(
+            Ts: DateTimeOffset.Now,
+            Level: level,
+            Path: path,
+            ElapsedMs: elapsed?.TotalMilliseconds,
+            HttpStatus: httpStatus,
+            KiloBytes: bytes,
+            Message: msg
+        ));
+    }
+
+    private readonly record struct CsvRow(
+        DateTimeOffset Ts,
+        string Level,
+        string? Path,
+        double? ElapsedMs,
+        int? HttpStatus,
+        double? KiloBytes,
+        string Message);
+
+    private void AppendCsv(CsvRow row)
     {
         try
         {
             var file = Path.Combine(_dir, $"runs_{DateTime.UtcNow:yyyyMMdd}.csv");
             var newFile = !File.Exists(file);
+
             var sb = new StringBuilder();
             if (newFile)
-                sb.AppendLine("started_at,correlation_id,input_key,output_key,success,error," +
-                              "t_presign_up_ms,t_upload_ms,t_invoke_ms,t_presign_down_ms,t_download_ms," +
-                              "st_presign_up,st_upload,st_invoke,st_presign_down,st_download," +
-                              "bytes_up,bytes_down,total_ms");
-
-            long? bUp = rec.Steps.FirstOrDefault(s => s.Name == "upload")?.Bytes;
-            long? bDown = rec.Steps.FirstOrDefault(s => s.Name == "download")?.Bytes;
-
-            var t = rec.Steps.ToDictionary(s => s.Name, s => s.Elapsed.TotalMilliseconds);
-            var st = rec.Steps.ToDictionary(s => s.Name, s => s.HttpStatus);
-            double totalMs = rec.Steps.Sum(s => s.Elapsed.TotalMilliseconds);
+                sb.AppendLine("ts,level,path,elapsed_ms,http_status,bytes,message");
 
             sb.AppendLine(string.Join(",",
-                rec.StartedAt.ToString("o"),
-                rec.CorrelationId,
-                Csv(rec.InputKey),
-                Csv(rec.OutputKey),
-                rec.Success,
-                Csv(rec.Error),
-                t.GetValueOrDefault("presign_upload").ToString(CultureInfo.InvariantCulture),
-                t.GetValueOrDefault("upload").ToString(CultureInfo.InvariantCulture),
-                t.GetValueOrDefault("invoke").ToString(CultureInfo.InvariantCulture),
-                t.GetValueOrDefault("presign_download").ToString(CultureInfo.InvariantCulture),
-                t.GetValueOrDefault("download").ToString(CultureInfo.InvariantCulture),
-                st.GetValueOrDefault("presign_upload"),
-                st.GetValueOrDefault("upload"),
-                st.GetValueOrDefault("invoke"),
-                st.GetValueOrDefault("presign_download"),
-                st.GetValueOrDefault("download"),
-                bUp?.ToString() ?? "",
-                bDown?.ToString() ?? "",
-                totalMs.ToString(CultureInfo.InvariantCulture)
+                Csv(row.Ts.ToString("o")),
+                Csv(row.Level),
+                Csv(row.Path),
+                row.ElapsedMs?.ToString(CultureInfo.InvariantCulture) ?? "",
+                row.HttpStatus?.ToString(CultureInfo.InvariantCulture) ?? "",
+                row.KiloBytes?.ToString(CultureInfo.InvariantCulture) ?? "",
+                Csv(row.Message)
             ));
-            File.AppendAllText(file, sb.ToString());
+
+            lock (_fileLock)
+            {
+                File.AppendAllText(file, sb.ToString(), Encoding.UTF8);
+            }
         }
         catch (Exception ex)
         {
-            Error("Failed to write run log CSV", ex);
-        }   
+            Debug.WriteLine($"RunLogService CSV write failed: {ex}");
+        }
     }
+
     private static string Csv(string? s) => "\"" + (s ?? "").Replace("\"", "\"\"") + "\"";
-
-    public event Action<string>? Line; // 한 줄 로그를 구독자(MainVM)가 받음
-    private static readonly AsyncLocal<string?> _scope = new();
-
-    public IDisposable Scope(string nameOrId)
-    {
-        var prev = _scope.Value;
-        _scope.Value = nameOrId;
-        return new ScopeGuard(() => _scope.Value = prev);
-    }
-
-    public void Info(string message) => Emit("INFO", message);
-    public void Warn(string message) => Emit("WARN", message);
-    public void Error(string message, Exception? ex = null)
-    {
-        if (ex != null) message = $"{message} | {ex.GetType().Name}: {ex.Message}";
-        Emit("ERROR", message);
-    }
-
-    private void Emit(string level, string msg)
-    {
-        var s = _scope.Value;
-        var prefix = s is null ? "" : $"[{s}] ";
-        var line = $"{DateTime.Now:HH:mm:ss.fff} [{level}] {prefix}{msg}";
-        try { Line?.Invoke(line); } catch { /* swallow */ }
-        Debug.WriteLine(line);
-    }
-
-    private sealed class ScopeGuard : IDisposable
-    {
-        private readonly Action _onDispose;
-        public ScopeGuard(Action onDispose) => _onDispose = onDispose;
-        public void Dispose() => _onDispose();
-    }
 }
 
 public static class StopwatchExt
 {
     public static async Task<(TimeSpan Elapsed, T Result)> TimeAsync<T>(Func<Task<T>> func)
-    { var sw = Stopwatch.StartNew(); var res = await func(); sw.Stop(); return (sw.Elapsed, res); }
+    {
+        var sw = Stopwatch.StartNew();
+        var res = await func();
+        sw.Stop();
+        return (sw.Elapsed, res);
+    }
 }

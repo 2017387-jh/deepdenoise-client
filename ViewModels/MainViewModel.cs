@@ -1,8 +1,10 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DeepDenoiseClient.Models;
 using DeepDenoiseClient.Services.Alb;
 using DeepDenoiseClient.Services.Common;
 using Grpc.Net.Client.Balancer;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Threading;
@@ -14,20 +16,39 @@ public partial class MainViewModel : ObservableObject
     private readonly SettingsService _settings;
     private readonly HealthService _health;
     private readonly RunLogService _log;
+    private readonly IStatusbarService _statusbar;
 
     public HttpViewModel HttpVM { get; }
+
+    public SystemStatusModel Status => _statusbar.Current;
 
     public ObservableCollection<string> Profiles { get; } = new(["Dev"]);
     [ObservableProperty] private string selectedProfile = "Dev";
     [ObservableProperty] private string pingResult = "N/A";
     public ObservableCollection<string> Logs { get; } = new();
+    public ObservableCollection<LogModel> LogEntries { get; } = new();
 
-    public MainViewModel(SettingsService settings, HealthService health, HttpViewModel httpVM, RunLogService log)
+
+    public MainViewModel(
+        SettingsService settings, 
+        HealthService health, 
+        HttpViewModel httpVM, 
+        RunLogService log,
+        IStatusbarService statusbar)
     {
-        _settings = settings; _health = health; HttpVM = httpVM; _log = log;
+        _settings = settings;
+        _health = health;
+        HttpVM = httpVM;
+        _log = log;
+        _statusbar = statusbar;
+
+        _log.Entry += entry =>
+        {
+            App.Current.Dispatcher.Invoke(() => LogEntries.Add(entry));
+        };
+
         _log.Line += s => Application.Current.Dispatcher.Invoke(() => Logs.Add(s));
 
-        // 추가: appsettings의 모든 프로필 이름으로 채우기
         Profiles.Clear();
         foreach (var name in _settings.GetProfileNames())
             Profiles.Add(name);
@@ -46,20 +67,23 @@ public partial class MainViewModel : ObservableObject
         _log.Info($"API Base {_settings.ActiveProfile.InvokeUri}");
     }
 
-
-    //[RelayCommand]
-    //private void ApplyProfile()
-    //{
-    //    _settings.SetActiveProfile(SelectedProfile);
-    //    HttpVM.RefreshFromSettings();
-    //    Logs.Add($"Profile switched to {SelectedProfile}");
-    //}
-
     [RelayCommand]
     private async Task PingAsync()
     {
-        var ok = await _health.CheckAsync();
-        PingResult = ok ? "OK" : "FAIL";
-        _log.Info($"Ping {PingResult} {_settings.ActiveProfile.HealthUri}");
+        using (_statusbar.Begin())
+        {
+            var (t, ok) = await StopwatchExt.TimeAsync(async () => await _health.CheckAsync());
+            PingResult = ok ? "OK" : "FAIL";
+            _log.Info($"Ping {PingResult} {_settings.ActiveProfile.HealthUri}", path: $"/healthz", elapsed: t);
+
+            if (ok)
+            {
+                _statusbar.Success("Ping successful.");
+            }
+            else
+            {
+                _statusbar.Fail("Ping failed.");
+            }
+        }
     }
 }

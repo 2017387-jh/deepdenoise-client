@@ -23,6 +23,7 @@ public partial class App : Application
                 services.AddSingleton<SettingsService>();
                 services.AddSingleton<S3TransferService>();
                 services.AddSingleton<RunLogService>();
+                services.AddSingleton<IStatusbarService, StatusbarService>();
 
                 // ALB routes
                 services.AddSingleton<HealthService>();

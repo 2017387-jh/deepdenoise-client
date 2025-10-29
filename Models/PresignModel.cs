@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DeepDenoiseClient.Modesls
+namespace DeepDenoiseClient.Models
 {
     public record PresignResult(string Url, string Method = "GET");
 }

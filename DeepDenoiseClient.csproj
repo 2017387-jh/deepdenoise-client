@@ -6,13 +6,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>Assets\CloudDeepDenoisingClient.ico</ApplicationIcon>
+    <PackageIcon>CloudDeepDenoisingClient.png</PackageIcon>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="Assets\**" />
-    <EmbeddedResource Remove="Assets\**" />
-    <None Remove="Assets\**" />
-    <Page Remove="Assets\**" />
+    <Content Include="Assets\CloudDeepDenoisingClient.ico" />
   </ItemGroup>
 
   <ItemGroup>
@@ -39,6 +38,14 @@
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
+    <None Update="Assets\CloudDeepDenoisingClient.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <None Update="Assets\DeepDenoisingClient.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
     </None>
     <None Update="appsettings.*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
