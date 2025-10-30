@@ -6,6 +6,7 @@
     <Application.Resources>
         <ResourceDictionary>
             <conv:NullToVisibilityConverter x:Key="NullToVisibility"/>
+            <conv:NullToBoolConverter x:Key="NullToBoolConverter"/>
             <conv:ElapsedMsToSecConverter x:Key="ElapsedMsToSecConverter"/>
             <conv:HttpDisplayConverter x:Key="HttpDisplayConverter"/>
             <ResourceDictionary.MergedDictionaries>

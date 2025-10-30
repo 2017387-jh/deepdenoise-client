@@ -1,6 +1,7 @@
-﻿using System.Text.Json;
+﻿using DeepDenoiseClient.Models;
 using System.IO;
-using DeepDenoiseClient.Models;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace DeepDenoiseClient.Services.Common;
 
@@ -72,5 +73,76 @@ public sealed class SettingsService
                 ? JsonSerializer.Deserialize<InvokeRequestModel>(d.GetRawText()) ?? new InvokeRequestModel()
                 : new InvokeRequestModel()
         };
+    }
+
+    /// <summary>
+    /// appsettings.json에 새 프로필을 추가합니다.
+    /// </summary>
+    public void AddProfile(string name, string apiBase)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+        if (!File.Exists(path))
+            throw new FileNotFoundException($"appsettings.json not found at {path}");
+
+        // 파일 읽기 및 파싱
+        var json = File.ReadAllText(path);
+        var root = JsonNode.Parse(json) as JsonObject;
+        if (root == null)
+            throw new InvalidOperationException("Invalid appsettings.json format.");
+
+        // Profiles 섹션 가져오기
+        if (!root.TryGetPropertyValue("Profiles", out var profilesNode) || profilesNode is not JsonObject profiles)
+            throw new InvalidOperationException("Profiles section not found in appsettings.json.");
+
+        // 이미 존재하면 예외
+        if (profiles.ContainsKey(name))
+            throw new InvalidOperationException($"Profile '{name}' already exists.");
+
+        // 기본 Defaults 객체 생성
+        var defaultRequest = new InvokeRequestModel();
+        var defaultsJson = JsonSerializer.SerializeToNode(defaultRequest);
+
+        // 새 프로필 객체 생성 (기본값 포함)
+        var newProfile = new JsonObject
+        {
+            ["ApiBase"] = apiBase,
+            ["GrpcEndpoint"] = apiBase,
+            ["HealthPath"] = "/healthz",
+            ["InvokePath"] = "/invocations",
+            ["PresignPath"] = "/presign",
+            ["InBucket"] = "ddn-in-bucket",
+            ["OutBucket"] = "ddn-out-bucket",
+            ["Defaults"] = defaultsJson // <-- 이 줄 추가
+        };
+
+        profiles[name] = newProfile;
+
+        // 파일로 저장 (들여쓰기 옵션)
+        File.WriteAllText(path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    /// <summary>
+    /// appsettings.json에서 프로필을 삭제합니다.
+    /// </summary>
+    public void RemoveProfile(string name)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+        if (!File.Exists(path))
+            throw new FileNotFoundException($"appsettings.json not found at {path}");
+
+        var json = File.ReadAllText(path);
+        var root = JsonNode.Parse(json) as JsonObject;
+        if (root == null)
+            throw new InvalidOperationException("Invalid appsettings.json format.");
+
+        if (!root.TryGetPropertyValue("Profiles", out var profilesNode) || profilesNode is not JsonObject profiles)
+            throw new InvalidOperationException("Profiles section not found in appsettings.json.");
+
+        if (!profiles.ContainsKey(name))
+            throw new InvalidOperationException($"Profile '{name}' does not exist.");
+
+        profiles.Remove(name);
+
+        File.WriteAllText(path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 }

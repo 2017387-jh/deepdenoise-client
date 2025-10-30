@@ -24,37 +24,52 @@
             <DockPanel LastChildFill="True">
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
                     <TextBlock Text="Profile"
-                        Height="{StaticResource FieldHeight}"
-                        VerticalAlignment="Center"
-                        Margin="0,0,8,0"
-                        Foreground="{StaticResource BrushSubText}"/>
+                               Height="{StaticResource FieldHeight}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0"
+                               Foreground="{StaticResource BrushSubText}"/>
 
                     <ComboBox Width="160"
-                        Margin="0,0,8,0"
-                        VerticalAlignment="Center"
-                        VerticalContentAlignment="Center"
-                        Padding="8,0,8,0"
-                        ItemsSource="{Binding Profiles}"
-                        SelectedItem="{Binding SelectedProfile}"/>
+                              Margin="0,0,4,0"
+                              VerticalAlignment="Center"
+                              VerticalContentAlignment="Center"
+                              Padding="8,0,8,0"
+                              ItemsSource="{Binding Profiles}"
+                              SelectedItem="{Binding SelectedProfile}"/>
 
-                    <Button Content="Ping"
-                        Margin="0,0,8,0"
-                        Command="{Binding PingCommand}"/>
+                    <Button Content="Add"
+                            Width="28"
+                            Height="28"
+                            Margin="0,0,4,0"
+                            Command="{Binding AddProfileCommand}"
+                            ToolTip="Add Profile"/>
+
+                    <Button Content="Delete"
+                            Width="28"
+                            Height="28"
+                            Margin="0,0,8,0"
+                            Command="{Binding DeleteProfileCommand}"
+                            ToolTip="Delete Selected Profile"
+                            IsEnabled="{Binding SelectedProfile, Converter={StaticResource NullToBoolConverter}}"/>
 
                     <TextBlock Text="Status:"
-                        Height="{StaticResource FieldHeight}"
-                        VerticalAlignment="Center"
-                        Margin="12,0,4,0"
-                        Foreground="{StaticResource BrushSubText}"/>
+                                Height="{StaticResource FieldHeight}"
+                                VerticalAlignment="Center"
+                                Margin="12,0,4,0"
+                                Foreground="{StaticResource BrushSubText}"/>    
 
                     <TextBlock Text="{Binding PingResult}"
-                        Height="{StaticResource FieldHeight}"
-                        VerticalAlignment="Center"
-                        FontWeight="Bold"/>
+                                Height="{StaticResource FieldHeight}"
+                                VerticalAlignment="Center"
+                                FontWeight="Bold"/>
                 </StackPanel>
-                <TextBlock Text="Deep Denoise Test Client"
-                   HorizontalAlignment="Right" VerticalAlignment="Center"
-                   Foreground="{StaticResource BrushSubText}"/>
+                <Button Content="Ping"
+                        Command="{Binding PingCommand}"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center"
+                        Margin="0,0,0,0"
+                        Width="80"
+                        DockPanel.Dock="Right"/>
             </DockPanel>
         </Border>
 

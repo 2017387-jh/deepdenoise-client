@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using DeepDenoiseClient.Models;
 using DeepDenoiseClient.Services.Alb;
 using DeepDenoiseClient.Services.Common;
+using DeepDenoiseClient.Views.Dialog;
 using Grpc.Net.Client.Balancer;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Collections.ObjectModel;
@@ -60,6 +61,9 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnSelectedProfileChanged(string value)
     {
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+
         _settings.SetActiveProfile(value);
         HttpVM.RefreshFromSettings();
 
@@ -72,6 +76,40 @@ public partial class MainViewModel : ObservableObject
     {
         LogEntries.Clear();
     }
+
+
+    [RelayCommand]
+    private void AddProfile()
+    {
+        var dialog = new ProfileDialog
+        {
+            DataContext = new ProfileDialogViewModel()
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            var vm = (ProfileDialogViewModel)dialog.DataContext;
+            if (!Profiles.Contains(vm.ProfileName))
+            {
+                _settings.AddProfile(vm.ProfileName, vm.ApiBase);
+                Profiles.Add(vm.ProfileName);
+                SelectedProfile = vm.ProfileName;
+            }
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanDeleteProfile))]
+    private void DeleteProfile()
+    {
+        if (SelectedProfile != null)
+        {
+            _settings.RemoveProfile(SelectedProfile);
+            Profiles.Remove(SelectedProfile);
+            if (Profiles.Count > 0)
+                SelectedProfile = Profiles[0];
+        }
+    }
+
+    private bool CanDeleteProfile() => !string.IsNullOrEmpty(SelectedProfile);
 
     [RelayCommand]
     private async Task PingAsync()
