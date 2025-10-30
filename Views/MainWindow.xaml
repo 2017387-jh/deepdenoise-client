@@ -4,7 +4,7 @@
         xmlns:views="clr-namespace:DeepDenoiseClient.Views.Tabs"
         xmlns:conv="clr-namespace:DeepDenoiseClient.Utils.Converters"
         Title="Deep Denoise Client"
-        Width="1680" Height="950"
+        Width="1680" Height="1000"
         Background="{StaticResource BrushBg}"
         WindowStartupLocation="CenterScreen">
 
@@ -88,7 +88,14 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <TextBlock Text="Logs" Style="{StaticResource SectionTitle}"/>
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Logs" FontWeight="Bold" VerticalAlignment="Center" Grid.Column="0"/>
+                        <Button Content="Clear" Command="{Binding ClearLogsCommand}" Grid.Column="1"/>
+                    </Grid>
 
                     <DataGrid Grid.Row="1"
                               ItemsSource="{Binding LogEntries}"
@@ -116,7 +123,16 @@
                                                 Binding="{Binding HttpStatus, Converter={StaticResource HttpDisplayConverter}, ConverterParameter=Status}"
                                                 Width="110"/>
                             <DataGridTextColumn Header="KiloBytes" Binding="{Binding KiloBytes}" Width="80"/>
-                            <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="700"/>
+                            <DataGridTextColumn Header="Message"
+                                                        Width="700"
+                                                        Binding="{Binding Message}">            
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextWrapping" Value="Wrap"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>

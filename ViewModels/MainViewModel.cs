@@ -68,6 +68,12 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void ClearLogs()
+    {
+        LogEntries.Clear();
+    }
+
+    [RelayCommand]
     private async Task PingAsync()
     {
         using (_statusbar.Begin())

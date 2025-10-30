@@ -8,7 +8,7 @@
         </Grid.ColumnDefinitions>
 
         <!-- Left column: flow -->
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Grid.Column="0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Grid.Column="0" Padding="4,0,0,0">
             <StackPanel Margin="0,0,14,0">
 
                 <!-- API Base -->
@@ -22,7 +22,7 @@
                 <!-- File select -->
                 <StackPanel Orientation="Horizontal" Margin="0,6,0,0" VerticalAlignment="Center">
                     <Button Content="Select Image" Command="{Binding HttpVM.PickFileCommand}" />
-                    <TextBlock Text="{Binding HttpVM.LocalFilePath}"
+                    <TextBlock Text="{Binding HttpVM.LocalFilePathsCount, StringFormat='Total: {0}'}"
                                Margin="8,0,0,0"
                                VerticalAlignment="Center"
                                Foreground="{StaticResource BrushSubText}" />
@@ -63,6 +63,11 @@
                 </StackPanel>
                 <TextBox Height="44" TextWrapping="Wrap" Text="{Binding HttpVM.PresignedGetUrl}"/>
 
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <Button Content="Download" Command="{Binding HttpVM.DownloadCommand}" />
+                    <Button Content="Open Download Folder" Command="{Binding HttpVM.OpenDownloadFolderCommand}" Width="150"/>
+                </StackPanel>
+
                 <ProgressBar Margin="0,6,0,0"
                              Minimum="0" Maximum="100"
                              Value="{Binding HttpVM.DownloadProgressPercent}"/>
@@ -72,6 +77,7 @@
                 <!-- Run All -->
                 <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                     <Button Padding="10"
+                            Height="40"
                             Command="{Binding HttpVM.RunAllCommand}"
                             HorizontalContentAlignment="Center"
                             VerticalContentAlignment="Center">
@@ -85,11 +91,24 @@
                             Content="Cancel" />
                 </StackPanel>
 
+                <!-- Run All Progress -->
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0" VerticalAlignment="Center">
+                    <ProgressBar Width="120"
+                                 Height="16"
+                                 Minimum="0"
+                                 Maximum="{Binding HttpVM.RunAllTotalCount}"
+                                 Value="{Binding HttpVM.RunAllCompletedCount}" />
+                        <TextBlock Text="{Binding HttpVM.RunAllProgressText}"
+                                   Margin="8,0,0,0"
+                                   VerticalAlignment="Center"
+                                   FontWeight="Bold"/>
+                </StackPanel>
+
             </StackPanel>
         </ScrollViewer>
 
         <!-- Right column: request/response -->
-        <Grid Grid.Column="1">
+        <Grid Grid.Column="1" Margin="8,4,0,0">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
@@ -105,7 +124,7 @@
 
             <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,4,0,0">
                 <DockPanel LastChildFill="True">
-                    <!-- 에러 메시지 -->
+                    <!-- Error Message -->
                     <TextBlock DockPanel.Dock="Bottom"
                        Margin="8,6,8,8"
                        Foreground="Tomato"
@@ -113,7 +132,7 @@
                        Text="{Binding HttpVM.RequestJsonError}"
                        Visibility="{Binding HttpVM.RequestJsonError, Converter={StaticResource NullToVisibility}}"/>
 
-                    <!-- TextBox 자체 스크롤 사용 -->
+                    <!-- TextBox Scroll -->
                     <TextBox AcceptsReturn="True"
                              TextWrapping="NoWrap"
                              FontFamily="Consolas"
@@ -128,10 +147,11 @@
             </Border>
 
             <!-- Invoke / Actions -->
-            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,12">
-                <Button Margin="0,0,0,0"
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="4,12,0,12">
+                <Button Width="120"
+                        Margin="0,0,0,0"
                         Command="{Binding HttpVM.InvokeCommand}">
-                    <TextBlock Text="Send&#10;(/invocations)" TextAlignment="Center"/>
+                    <TextBlock Text="Send (/invocations)" TextAlignment="Center"/>
                 </Button>
                 <Button Content="Cancel" Margin="12,0,0,0"
                         Command="{Binding HttpVM.InvokeCancelCommand}"/>

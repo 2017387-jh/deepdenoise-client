@@ -35,9 +35,9 @@
     <CornerRadius x:Key="CornerRadius">10</CornerRadius>
     <sys:Double x:Key="Spacing">10</sys:Double>
     <sys:Double x:Key="BigSpacing">16</sys:Double>
-    <sys:Double x:Key="FieldHeight">34</sys:Double>
-    <sys:Double x:Key="BtnHeight">34</sys:Double>
-    <Thickness x:Key="CardPadding">14</Thickness>
+    <sys:Double x:Key="FieldHeight">30</sys:Double>
+    <sys:Double x:Key="BtnHeight">30</sys:Double>
+    <Thickness x:Key="CardPadding">4</Thickness>
     <sys:Double x:Key="SectionGap">12</sys:Double>
     <sys:Double x:Key="TitleSize">18</sys:Double>
     <sys:Double x:Key="LabelSize">12</sys:Double>
@@ -71,7 +71,7 @@
     <!-- Button: 좌우 패딩 늘림 + 최소 너비 -->
     <Style TargetType="Button">
         <Setter Property="Height" Value="{StaticResource BtnHeight}"/>
-        <Setter Property="MinWidth" Value="96"/>
+        <Setter Property="MinWidth" Value="100"/>
         <Setter Property="Foreground" Value="White"/>
         <Setter Property="Background" Value="{StaticResource BrushPrimary}"/>
         <Setter Property="Padding" Value="16,0"/>
@@ -147,6 +147,6 @@
         <Setter Property="FontSize" Value="{StaticResource TitleSize}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{StaticResource BrushText}"/>
-        <Setter Property="Margin" Value="0,0,0,10"/>
+        <Setter Property="Margin" Value="0,2,0,0"/>
     </Style>
 </ResourceDictionary>

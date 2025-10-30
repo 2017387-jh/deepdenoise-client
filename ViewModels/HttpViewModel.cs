@@ -5,8 +5,11 @@ using DeepDenoiseClient.Services.Alb;
 using DeepDenoiseClient.Services.Common;
 using DeepDenoiseClient.Services.Lambda;
 using DeepDenoiseClient.Utils;
+using Google.Protobuf.WellKnownTypes;
 using Microsoft.Win32;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Runtime.Intrinsics.Arm;
@@ -31,11 +34,17 @@ public partial class HttpViewModel : ObservableObject
     [ObservableProperty] private string presignedPutUrl = "";
     [ObservableProperty] private string presignedGetUrl = "";
     [ObservableProperty] private string localFilePath = "";
+
+    [ObservableProperty]
+    private ObservableCollection<string> localFilePaths = new();
+
     [ObservableProperty] private string fileName = ""; // File Name
     [ObservableProperty] private string objectKey = "";
     [ObservableProperty] private string correlationId = Guid.NewGuid().ToString("N");
     [ObservableProperty] private int uploadProgressPercent;
     [ObservableProperty] private int downloadProgressPercent;
+
+
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RequestJsonEditable))]
@@ -47,6 +56,29 @@ public partial class HttpViewModel : ObservableObject
     public string RequestPreviewJson => JsonSerializer.Serialize(Request, new JsonSerializerOptions { WriteIndented = true });
 
     [ObservableProperty] private string? requestJsonError;
+
+    [ObservableProperty]
+    private int runAllTotalCount;
+    [ObservableProperty]
+    private int runAllCompletedCount;
+    public string RunAllProgressText => $"{RunAllCompletedCount}/{RunAllTotalCount}";
+
+    partial void OnRunAllCompletedCountChanged(int value)
+    {
+        OnPropertyChanged(nameof(RunAllProgressText));
+    }
+    partial void OnRunAllTotalCountChanged(int value)
+    {
+        OnPropertyChanged(nameof(RunAllProgressText));
+    }
+
+    public int LocalFilePathsCount => LocalFilePaths?.Count ?? 0;
+    partial void OnLocalFilePathsChanged(ObservableCollection<string> value)
+    {
+        OnPropertyChanged(nameof(LocalFilePathsCount));
+        if (value != null)
+            value.CollectionChanged += (_, __) => OnPropertyChanged(nameof(LocalFilePathsCount));
+    }
 
     public string RequestJsonEditable
     {
@@ -98,13 +130,13 @@ public partial class HttpViewModel : ObservableObject
             JsonSerializer.Serialize(_settings.ActiveProfile.Defaults))!;
 
         UpdateObjectKey();
-        RebuildUrls();
+        RebuildRequestJSON();
     }
 
     partial void OnFileNameChanged(string value)
     {
         UpdateObjectKey();
-        RebuildUrls();
+        RebuildRequestJSON();
     }
 
     partial void OnLocalFilePathChanged(string value)
@@ -113,7 +145,9 @@ public partial class HttpViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(value))
             FileName = Path.GetFileName(value);
 
-        RebuildUrls();
+        RebuildRequestJSON();
+
+
     }
 
     [RelayCommand]
@@ -128,11 +162,18 @@ public partial class HttpViewModel : ObservableObject
     [RelayCommand]
     private void PickFile()
     {
-        var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "Images|*.tif;*.tiff;*.png;*.jpg;*.jpeg|All|*.*" };
-        if (dlg.ShowDialog() == true) 
+        var dlg = new Microsoft.Win32.OpenFileDialog
         {
-            LocalFilePath = dlg.FileName; 
-            FileName = Path.GetFileName(LocalFilePath); 
+            Filter = "RAW/TIFF|*.raw;*.tif;*.tiff|All|*.*",
+            Multiselect = true
+        };
+
+        if (dlg.ShowDialog() == true)
+        {
+            LocalFilePaths = new ObservableCollection<string>(dlg.FileNames);
+            // 첫 번째 파일을 기존 단일 프로퍼티에도 반영 (호환성)
+            LocalFilePath = dlg.FileNames.FirstOrDefault() ?? "";
+            FileName = Path.GetFileName(LocalFilePath);
         }
     }
 
@@ -291,81 +332,113 @@ public partial class HttpViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private void OpenDownloadFolder()
+    {
+        var downloadRoot = Path.Combine(AppContext.BaseDirectory, "download");
+        if (!Directory.Exists(downloadRoot))
+            Directory.CreateDirectory(downloadRoot);
+
+        // Windows 탐색기로 폴더 열기
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = downloadRoot,
+            UseShellExecute = true
+        });
+    }
+
     [RelayCommand(IncludeCancelCommand = true)]
     private async Task RunAllAsync(CancellationToken ct)
     {
         if (!string.IsNullOrEmpty(RequestJsonError))
             throw new InvalidOperationException($"JSON is invalid: {RequestJsonError}");
 
-        var started = Stopwatch.GetTimestamp();
+        var files = LocalFilePaths?.Any() == true ? LocalFilePaths : new ObservableCollection<string> { LocalFilePath };
 
-        using (_statusbar.Begin())
+        RunAllTotalCount = files.Count;
+        RunAllCompletedCount = 0;
+
+        foreach (var file in files)
         {
-            try
+            if (ct.IsCancellationRequested) break;
+
+            LocalFilePath = file;
+            FileName = Path.GetFileName(file);
+            UpdateObjectKey();
+            RebuildRequestJSON();
+
+            var started = Stopwatch.GetTimestamp();
+
+            using (_statusbar.Begin())
             {
-                if (string.IsNullOrWhiteSpace(LocalFilePath)) throw new InvalidOperationException("Select a file.");
-                if (string.IsNullOrWhiteSpace(FileName)) FileName = Path.GetFileName(LocalFilePath);
-
-                var (t1, upPre) = await StopwatchExt.TimeAsync(() => _presign.GetUploadUrlAsync(ObjectKey, ct));
-
-                PresignedPutUrl = upPre.Url;
-                _logger.Info($"presign upload ok cid={CorrelationId}", path: $"/presign(upload)", elapsed: t1, httpStatus: 200);
-
-                var uploadTotal = new FileInfo(LocalFilePath).Length;
-                var uploadProgress = new Progress<long>(sent => UploadProgressPercent = uploadTotal > 0 ? (int)(sent * 100 / uploadTotal) : 0);
-                var (t2, (stUp, bytesUp)) = await StopwatchExt.TimeAsync(async () => await _s3.UploadAsync(PresignedPutUrl, LocalFilePath, uploadProgress, ct));
-                _logger.Info($"upload ok cid={CorrelationId}", path: $"/upload", elapsed: t2, httpStatus: stUp, bytes: bytesUp);
-
-                using var body = BuildInvokeBody(Request, _settings.ActiveProfile, ObjectKey);
-                var (t3, (stInv, rsp)) = await StopwatchExt.TimeAsync(async () => await _invoke.InvokeAsync(body.RootElement, CorrelationId, ct));
-                ResponseJson = JsonSerializer.Serialize(rsp, new JsonSerializerOptions { WriteIndented = true });
-                _logger.Info($"invoke ok cid={CorrelationId}", path: $"/invocations", elapsed: t3, httpStatus: stInv);
-
-
-                var (t4, downPre) = await StopwatchExt.TimeAsync(() => _presign.GetDownloadUrlAsync(ObjectKey, ct));
-                PresignedGetUrl = downPre.Url;
-                _logger.Info($"presign download ok cid={CorrelationId}", path: $"/presign(download)", elapsed: t4, httpStatus: 200);
-
-                var downloadRoot = Path.Combine(AppContext.BaseDirectory, "download");
-                // outKey 내 구분자를 OS 기준으로 맞춰서 경로 생성
-                var destPath = Path.Combine(downloadRoot, ObjectKey.Replace('/', Path.DirectorySeparatorChar)
-                                                               .Replace('\\', Path.DirectorySeparatorChar));
-
-                // 하위 디렉터리까지 생성
-                Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-
-                // 다운로드
-                DownloadProgressPercent = 0;
-                var downloadTotal = await _s3.GetContentLengthAsync(PresignedGetUrl, ct);
-                var downloadProgress = new Progress<long>(received =>
+                try
                 {
-                    if (downloadTotal > 0)
-                        DownloadProgressPercent = (int)(received * 100 / downloadTotal);
-                });
+                    if (string.IsNullOrWhiteSpace(LocalFilePath)) throw new InvalidOperationException("Select a file.");
+                    if (string.IsNullOrWhiteSpace(FileName)) FileName = Path.GetFileName(LocalFilePath);
 
-                var (t5, (stDown, bytesDown)) = await StopwatchExt.TimeAsync(async () =>
-                    await _s3.DownloadAsync(PresignedGetUrl, destPath, downloadProgress, ct));
+                    var (t1, upPre) = await StopwatchExt.TimeAsync(() => _presign.GetUploadUrlAsync(ObjectKey, ct));
 
-                DownloadProgressPercent = 100;
-                _logger.Info($"download ok cid={CorrelationId} -> {destPath}",
-                             path: $"/download", elapsed: t5, httpStatus: stDown, bytes: bytesDown);
+                    PresignedPutUrl = upPre.Url;
+                    _logger.Info($"presign upload ok cid={CorrelationId}", path: $"/presign(upload)", elapsed: t1, httpStatus: 200);
 
-                _statusbar.Success("All Steps are completed");
-            }
-            catch (Exception ex)
-            {
-                var totalElapsed = Stopwatch.GetElapsedTime(started); // 총 소요 시간
+                    var uploadTotal = new FileInfo(LocalFilePath).Length;
+                    var uploadProgress = new Progress<long>(sent => UploadProgressPercent = uploadTotal > 0 ? (int)(sent * 100 / uploadTotal) : 0);
+                    var (t2, (stUp, bytesUp)) = await StopwatchExt.TimeAsync(async () => await _s3.UploadAsync(PresignedPutUrl, LocalFilePath, uploadProgress, ct));
+                    _logger.Info($"upload ok cid={CorrelationId}", path: $"/upload", elapsed: t2, httpStatus: stUp, bytes: bytesUp);
 
-                _logger.Error($"run all failed cid={CorrelationId}", ex, path: $"/run_all", elapsed: totalElapsed, 503);
-                CorrelationId = Guid.NewGuid().ToString("N");
-                throw;
-            }
-            finally
-            {
-                var totalElapsed = Stopwatch.GetElapsedTime(started); // 총 소요 시간
+                    using var body = BuildInvokeBody(Request, _settings.ActiveProfile, ObjectKey);
+                    var (t3, (stInv, rsp)) = await StopwatchExt.TimeAsync(async () => await _invoke.InvokeAsync(body.RootElement, CorrelationId, ct));
+                    ResponseJson = JsonSerializer.Serialize(rsp, new JsonSerializerOptions { WriteIndented = true });
+                    _logger.Info($"invoke ok cid={CorrelationId}", path: $"/invocations", elapsed: t3, httpStatus: stInv);
 
-                _logger.Info($"run all completed cid={CorrelationId}", path: $"/run_all", elapsed: totalElapsed, 200);
-                CorrelationId = Guid.NewGuid().ToString("N");
+
+                    var (t4, downPre) = await StopwatchExt.TimeAsync(() => _presign.GetDownloadUrlAsync(ObjectKey, ct));
+                    PresignedGetUrl = downPre.Url;
+                    _logger.Info($"presign download ok cid={CorrelationId}", path: $"/presign(download)", elapsed: t4, httpStatus: 200);
+
+                    var downloadRoot = Path.Combine(AppContext.BaseDirectory, "download");
+                    // outKey 내 구분자를 OS 기준으로 맞춰서 경로 생성
+                    var destPath = Path.Combine(downloadRoot, ObjectKey.Replace('/', Path.DirectorySeparatorChar)
+                                                                   .Replace('\\', Path.DirectorySeparatorChar));
+
+                    // 하위 디렉터리까지 생성
+                    Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+
+                    // 다운로드
+                    DownloadProgressPercent = 0;
+                    var downloadTotal = await _s3.GetContentLengthAsync(PresignedGetUrl, ct);
+                    var downloadProgress = new Progress<long>(received =>
+                    {
+                        if (downloadTotal > 0)
+                            DownloadProgressPercent = (int)(received * 100 / downloadTotal);
+                    });
+
+                    var (t5, (stDown, bytesDown)) = await StopwatchExt.TimeAsync(async () =>
+                        await _s3.DownloadAsync(PresignedGetUrl, destPath, downloadProgress, ct));
+
+                    DownloadProgressPercent = 100;
+                    _logger.Info($"download ok cid={CorrelationId} -> {destPath}",
+                                 path: $"/download", elapsed: t5, httpStatus: stDown, bytes: bytesDown);
+
+                    _statusbar.Success("All Steps are completed");
+                }
+                catch (Exception ex)
+                {
+                    var totalElapsed = Stopwatch.GetElapsedTime(started); // 총 소요 시간
+
+                    _logger.Error($"run all failed cid={CorrelationId}", ex, path: $"/run_all", elapsed: totalElapsed, 503);
+                    CorrelationId = Guid.NewGuid().ToString("N");
+                    throw;
+                }
+                finally
+                {
+                    var totalElapsed = Stopwatch.GetElapsedTime(started); // 총 소요 시간
+
+                    _logger.Info($"run all completed cid={CorrelationId}", path: $"/run_all", elapsed: totalElapsed, 200);
+                    CorrelationId = Guid.NewGuid().ToString("N");
+
+                    RunAllCompletedCount++;
+                }
             }
         }
     }
@@ -395,7 +468,7 @@ public partial class HttpViewModel : ObservableObject
         return null;
     }
 
-    private void RebuildUrls()
+    private void RebuildRequestJSON()
     {
         // 프로필/버킷/계정명
         var profile = _settings.ActiveProfile;
@@ -406,7 +479,28 @@ public partial class HttpViewModel : ObservableObject
             ? FileName
             : (!string.IsNullOrWhiteSpace(LocalFilePath) ? Path.GetFileName(LocalFilePath) : null);
 
-        if(string.IsNullOrWhiteSpace(objectKey))
+        // TIFF 파일이면 width/height 자동 업데이트
+        if (!string.IsNullOrWhiteSpace(LocalFilePath))
+        {
+            var ext = Path.GetExtension(LocalFilePath).ToLowerInvariant();
+            if (ext == ".tif" || ext == ".tiff")
+            {
+                try
+                {
+                    // System.Drawing.Common 패키지 필요 (Windows 환경)
+                    using var img = System.Drawing.Image.FromFile(LocalFilePath);
+                    Request.Width = img.Width;
+                    Request.Height = img.Height;
+                }
+                catch (Exception ex)
+                {
+                    // 실패 시 무시 또는 로그
+                    _logger.Warn($"TIFF 크기 추출 실패: {ex.Message}");
+                }
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(objectKey))
         {
             Request.ImgInputUrl = profile.Defaults.ImgInputUrl;
             Request.ImgOutputUrl = profile.Defaults.ImgOutputUrl;
